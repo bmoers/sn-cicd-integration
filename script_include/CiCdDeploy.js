@@ -562,6 +562,7 @@ CiCdDeploy.prototype = {
             
 
             self.assign(payload, {
+                state: 'committing',
                 progressId: progress_id,
                 step: 'deploymentComplete'
             });
@@ -586,6 +587,7 @@ CiCdDeploy.prototype = {
         var us = new GlideRecord('sys_update_set');
         if (us.get('remote_sys_id', payload.remoteUpdateSetSysId)) {
             payload.targetUpdateSetSysId = us.getValue('sys_id');
+            payload.state = 'committed';
         }
         return payload;
     },
@@ -691,40 +693,6 @@ CiCdDeploy.prototype = {
             return new sn_ws_err.BadRequestError(e.message);
         }
 
-    },
-
-
-    /**
-     * Target Commit API. This API does not Commit the US but returns all required information to do the commit request.
-     *    mapped to /api/swre/v1/cicd/commit
-     * 
-     * @returns {any} 
-     */
-    commitUpdateSet: function () {
-        var self = this,
-            sysId = self.request.pathParams['sysId'];
-
-        return {
-            method: 'POST',
-            endpoint: 'xmlhttp.do',
-            headers: {
-                'X-UserToken': gs.getSessionToken()
-            },
-            validate: {
-                'sysparm_processor': 'com.glide.update.UpdateSetCommitAjaxProcessor',
-                'sysparm_scope': 'global',
-                'sysparm_want_session_messages': 'true',
-                'sysparm_type': 'validateCommitRemoteUpdateSet',
-                'sysparm_remote_updateset_sys_id': sysId
-            },
-            commit: {
-                'sysparm_processor': 'com.glide.update.UpdateSetCommitAjaxProcessor',
-                'sysparm_scope': 'global',
-                'sysparm_want_session_messages': 'true',
-                'sysparm_type': 'commitRemoteUpdateSet',
-                'sysparm_remote_updateset_sys_id': sysId
-            }
-        };
     },
 
 
