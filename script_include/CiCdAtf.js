@@ -80,16 +80,16 @@ CiCdAtf.prototype = /** @lends global.module:sys_script_include.CiCdAtf.prototyp
      * 
      * @returns {any} testRunnerSessionId
      */
-    getTestRunnerSessionId: function () {
+    getTestRunnerSessionId: function (runnerId) {
         var testRunnerSessionId = null;
 
         var existingRunner = new GlideRecord("sys_atf_agent");
-        existingRunner.addQuery("user", gs.getUserID());
         existingRunner.addQuery("status", "online");
-        //existingRunner.addQuery("session_id", new GlideChecksum(gs.getSessionID()).getMD5());
-        //otherSessionRunner.addQuery("session_id","!=", new GlideChecksum(gs.getSessionID()).getMD5());
         existingRunner.addQuery("type", "manual");
-        existingRunner.orderByDesc("last_checkin");
+        existingRunner.addQuery("user_agent", "CONTAINS", runnerId);
+        // existingRunner.addQuery("session_id", new GlideChecksum(gs.getSessionID()).getMD5());
+        // otherSessionRunner.addQuery("session_id","!=", new GlideChecksum(gs.getSessionID()).getMD5());
+        // existingRunner.addQuery("user", gs.getUserID());
         existingRunner.setLimit(1);
         existingRunner._query();
         if (existingRunner._next()) {
@@ -108,6 +108,7 @@ CiCdAtf.prototype = /** @lends global.module:sys_script_include.CiCdAtf.prototyp
     executeSuite: function () {
         var self = this,
             suiteId,
+            runnerId,
             out = {
                 executionId: null
             },
@@ -119,10 +120,14 @@ CiCdAtf.prototype = /** @lends global.module:sys_script_include.CiCdAtf.prototyp
             return new sn_ws_err.BadRequestError('initialize: no body found');
 
         var body = requestBody.nextEntry();
-        suiteId = body.suiteId || null;
+        suiteId = body.id || null;
         if (gs.nil(suiteId))
             return new sn_ws_err.BadRequestError('initialize: suiteId property not found');
 
+        runnerId = body.runnerId || null;
+        if (gs.nil(runnerId))
+            return new sn_ws_err.BadRequestError('initialize: runnerId property not found');
+        
         var gr = new GlideRecord('sys_atf_test_suite');
         if (!gr.get(suiteId)) {
             return new sn_ws_err.BadRequestError("Could not find the Test suite with id: " + suiteId);
@@ -133,7 +138,7 @@ CiCdAtf.prototype = /** @lends global.module:sys_script_include.CiCdAtf.prototyp
 
         need_browser = sn_atf.AutomatedTestingFramework.doesSuiteHaveUITests(suiteId);
         if (need_browser) {
-            testRunnerSessionId = self.getTestRunnerSessionId();
+            testRunnerSessionId = self.getTestRunnerSessionId(runnerId);
             if (gs.nil(testRunnerSessionId)) {
                 return new sn_ws_err.BadRequestError("This TestSuite requires an active Test Runner to be available.");
             }
@@ -209,6 +214,7 @@ CiCdAtf.prototype = /** @lends global.module:sys_script_include.CiCdAtf.prototyp
     executeTest: function () {
         var self = this,
             testId,
+            runnerId,
             out = {
                 executionId: null
             },
@@ -220,10 +226,14 @@ CiCdAtf.prototype = /** @lends global.module:sys_script_include.CiCdAtf.prototyp
             return new sn_ws_err.BadRequestError('initialize: no body found');
 
         var body = requestBody.nextEntry();
-        testId = body.testId || null;
+        testId = body.id || null;
         if (gs.nil(testId))
-            return new sn_ws_err.BadRequestError('initialize: testId property not found');
+            return new sn_ws_err.BadRequestError('initialize: testId property not found' + JSON.stringify(body));
 
+        runnerId = body.runnerId || null;
+        if (gs.nil(runnerId))
+            return new sn_ws_err.BadRequestError('initialize: runnerId property not found');
+        
         var gr = new GlideRecord('sys_atf_test');
         if (!gr.get(testId)) {
             return new sn_ws_err.BadRequestError("Could not find the Test suite with id: " + testId);
@@ -234,7 +244,7 @@ CiCdAtf.prototype = /** @lends global.module:sys_script_include.CiCdAtf.prototyp
 
         need_browser = sn_atf.AutomatedTestingFramework.doesTestHaveUISteps(testId);
         if (need_browser) {
-            testRunnerSessionId = self.getTestRunnerSessionId();
+            testRunnerSessionId = self.getTestRunnerSessionId(runnerId);
             if (gs.nil(testRunnerSessionId)) {
                 return new sn_ws_err.BadRequestError("This Test requires an active Test Runner to be available.");
             }
