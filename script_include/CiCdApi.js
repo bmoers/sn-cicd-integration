@@ -134,14 +134,16 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
 
 
     getFilesFromTable: function (tableName) {
-        var self = this;
+        var self = this,
+            rootTable = null;
 
-        var tabHir = new TableUtils(tableName).getHierarchy().toArray(),
-            rootTable = tabHir[tabHir.length - 1];
-        
-        if ('sys_metadata' != rootTable)
-            return new sn_ws_err.NotFoundError('No Record found.' + tabHir + ' - ' + tabHir[tabHir.length - 1] + '- ' + tabHir.length);
-        
+        if ('sys_metadata' != tableName) {
+            var extendsSyMeta = new TableUtils(tableName).getHierarchy().toArray().some(function (table) {
+                return ('sys_metadata' == table);
+            });
+            if (!extendsSyMeta)
+                return new sn_ws_err.NotFoundError('No Record found.' + tabHir + ' - ' + tabHir[tabHir.length - 1] + '- ' + tabHir.length);
+        }
         return self._getGrResultStream(tableName, null, {});
     },
 
@@ -300,7 +302,13 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
                 var element = gr.getElement(fieldName);
                 var ed = element.getED(),
                     value = null;
-
+                /*
+                .nil() is also true if a filed has length 0 !!
+                if (element.nil()) {
+                    value = null;
+                } else
+                */
+                
                 if (ed.isBoolean()) {
                     value = JSUtil.toBoolean(element.toString());
                 } else if (ed.isTrulyNumber()) {
