@@ -195,7 +195,7 @@ CiCdDeploy.prototype = {
 
             var request = new sn_ws.RESTMessageV2();
             request.setEndpoint(endpoint);
-            request.setRequestHeader('Authorization', 'Bearer '.concat(self.getBearer()));
+            request.setRequestHeader('Authorization', 'Bearer '.concat(self.getBearer(targetEnvironment)));
             request.setRequestHeader("Accept", "application/json");
             request.setRequestHeader("Content-Type", "application/json");
             request.setHttpMethod('POST');
@@ -720,18 +720,22 @@ CiCdDeploy.prototype = {
      * 
      * @returns {any} token
      */
-    getBearer: function () {
-        var self = this,
-            token = 'undefined';
+    getBearer: function (targetEnvironment) {
+        var self = this;
 
-        var gr = new GlideRecord('oauth_credential');
-        if (gr.get(self.REST_BEARER)) {
-            token = gr.getValue('token');
+        const regex = /(?:http[s]?:\/\/)([^:\/]*)/; // get 'instance.service-now.com' out of 'https://instance.service-now.com/'
+
+        if (!targetEnvironment)
+            return '';
+    
+        const match = targetEnvironment.match(regex);
+        if (match) {
+            const targetHost = match[1];
+            // check for property 'cicd-integration.deploy.oauth.instance.service-now.com', fallback to default 'cicd-integration.deploy.oauth'
+            gs.getProperty('cicd-integration.deploy.oauth.'.concat(targetHost), gs.getProperty('cicd-integration.deploy.oauth', 'cicd-integration.deploy.oauth-undefined'));
         }
-        return token;
+        return 'undefined';
     },
-
-
 
     type: 'CiCdDeploy'
 };
