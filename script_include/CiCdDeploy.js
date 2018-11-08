@@ -15,8 +15,6 @@ var CiCdDeploy = Class.create();
 CiCdDeploy.prototype = {
 
 
-    REST_BEARER: gs.getProperty('cicd-integration.deploy.oauth'),
-
     assign: function (target) {
         if (target === null) { // TypeError if undefined or null
             throw new TypeError('Cannot convert undefined or null to object');
@@ -195,7 +193,7 @@ CiCdDeploy.prototype = {
 
             var request = new sn_ws.RESTMessageV2();
             request.setEndpoint(endpoint);
-            request.setRequestHeader('Authorization', 'Bearer '.concat(self.getBearer(targetEnvironment)));
+            request.setAuthenticationProfile('basic', self.getBasicAuthProfile());
             request.setRequestHeader("Accept", "application/json");
             request.setRequestHeader("Content-Type", "application/json");
             request.setHttpMethod('POST');
@@ -720,21 +718,28 @@ CiCdDeploy.prototype = {
      * 
      * @returns {any} token
      */
-    getBearer: function (targetEnvironment) {
+    getBasicAuthProfile: function (targetEnvironment) {
         var self = this;
 
         const regex = /(?:http[s]?:\/\/)([^:\/]*)/; // get 'instance.service-now.com' out of 'https://instance.service-now.com/'
 
         if (!targetEnvironment)
             return '';
-    
+
         const match = targetEnvironment.match(regex);
         if (match) {
             const targetHost = match[1];
-            // check for property 'cicd-integration.deploy.oauth.instance.service-now.com', fallback to default 'cicd-integration.deploy.oauth'
-            gs.getProperty('cicd-integration.deploy.oauth.'.concat(targetHost), gs.getProperty('cicd-integration.deploy.oauth', 'cicd-integration.deploy.oauth-undefined'));
+
+            var gr = new GlideRecord('sys_auth_profile_basic');
+            if (gr.get('name', 'CICD-deploy-'.concat(targetHost))) {
+                return gr.getValue('sys_id');
+            } else if (gr.get('name', 'CICD-deploy--default--')) {
+                return gr.getValue('sys_id');
+            } else {
+                return null;
+            }
         }
-        return 'undefined';
+        return null;
     },
 
     type: 'CiCdDeploy'
