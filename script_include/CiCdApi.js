@@ -75,6 +75,8 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
     /**
      * Get User information by userId
      *
+     * mapped to GET /api/swre/v1/cicd/user/{userId}
+     * 
      * @param {String} userId value of the user_name field
      * @returns {any} the user details
      */
@@ -90,10 +92,12 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
     },
 
     /**
-     * Get the details of an UpdateSet
+     * Get the details of an update-set
+     * 
+     * mapped to GET /api/swre/v1/cicd/updateset/{updateSetSysId}
      *
      * @param {String} updateSetSysId
-     * @returns {any} the updateset details
+     * @returns {any} the update-set details
      */
     getUpdateSetDetails: function (updateSetSysId) {
         var self = this;
@@ -102,10 +106,12 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
     },
 
     /**
-     * Get the details of an UpdateSet
+     * Get all XMl records of an update-set
      *
+     * mapped to GET /api/swre/v1/cicd/updateset_files/{updateSetSysId}
+     * 
      * @param {String} updateSetSysId
-     * @returns {any} the updateset details
+     * @returns {any} the update-set XML records
      */
     getUpdateSetFiles: function (updateSetSysId) {
         var self = this;
@@ -117,11 +123,56 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
 
     },
 
+    /**
+     * Export an update-set
+     * 
+     * mapped to GET /api/swre/v1/cicd/export_updateset/{updateSetSysId}
+     * @returns {any} all test assigned to a test suite
+     */
+    exportUpdateSet: function (updateSetSysId) {
+        var self = this, sysId;
+
+        if (!updateSetSysId)
+            return new sn_ws_err.BadRequestError('Update-Set is mandatory');
+
+        var current = new GlideRecord('sys_update_set');
+        /*
+        current.addEncodedQuery('state=complete^sys_id='.concat(updateSetSysId));
+        current._query();
+        if(!current._next())
+            return new sn_ws_err.BadRequestError('Update-Set Not found. Is it completed?');
+        */
+        if (!current.get(updateSetSysId))
+            return new sn_ws_err.BadRequestError('Update-Set Not found.');
+        
+        var updateSetExport = new UpdateSetExport();
+        if (current.base_update_set == current.sys_id) {
+            sysId = updateSetExport.exportHierarchy(current);
+
+            response.setStatus(302);
+            return response.setLocation([gs.getProperty('glide.servlet.uri'), 'cicd_export_base_update_set.do?sysparm_delete_when_done=true&sysparm_sys_id=', sysId].join(''));
+
+        } else if (current.base_update_set.nil()) {
+            sysId = updateSetExport.exportUpdateSet(current);
+
+            response.setStatus(302);
+            return response.setLocation([gs.getProperty('glide.servlet.uri'), 'cicd_export_update_set.do?sysparm_delete_when_done=true&sysparm_sys_id=', sysId].join(''));
+
+        } else {
+            return new sn_ws_err.BadRequestError('Somethings wrong here... '.concat(current.getEncodedQuery()));
+        }
+    },
+
+    // TODO - convert app to update-set
+    publishToUpdateSet: function (appId) { 
+
+    },
 
     /**
      * Get all ATF Test which are assigned to a TestSuite. <br>
      * This is used to exclude the test from the ATF runs to avoid running twice.
      * 
+     * mapped to GET /api/swre/v1/cicd/test_in_suites
      * @returns {any} all test assigned to a test suite
      */
     getAllTestInSuites: function () {
@@ -132,7 +183,14 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
         });
     },
 
-
+    /**
+     * This is a wrapper to give access to any kind of table extending sys_metadata
+     * 
+     * mapped to GET /api/swre/v1/cicd/file/{tableName}
+     * 
+     * @param {String} tableName the table to read from
+     * @returns {any} the records from the corresponding table
+     */
     getFilesFromTable: function (tableName) {
         var self = this,
             rootTable = null;
@@ -142,19 +200,77 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
                 return ('sys_metadata' == table);
             });
             if (!extendsSyMeta)
-                return new sn_ws_err.NotFoundError('No Record found.' + tabHir + ' - ' + tabHir[tabHir.length - 1] + '- ' + tabHir.length);
+                return [];//new sn_ws_err.NotFoundError('No Record found on table ' + tableName);
         }
         return self._getGrResultStream(tableName, null, {});
     },
 
-
+    /**
+     * Change the state of an update-set
+     * 
+     * mapped to PATCH /api/swre/v1/cicd/updateset_status/{updateSetSysId}
+     * 
+     * @param {String} updateSetSysId the update-set sys_id
+     * @returns {any} the update-set
+     */
     setUpdateSetStatus: function (updateSetSysId) {
         var self = this;
-
+        
         var state = (self.body) ? self.body.state : undefined;
         if (state === undefined)
             return new sn_ws_err.BadRequestError('State is mandatory');
-        
+        /*
+        var stateOpt = {
+            'build': {
+                label: 'Complete (build)',
+                sequence: 0
+            },
+            'build_in_progress': {
+                label: 'Build in progress',
+                sequence: 20
+            },
+            'code_review_pending': {
+                label: 'Code review pending',
+                sequence: 30
+            },
+            'code_review_rejected': {
+                label: 'Code review rejected',
+                sequence: 40
+            },
+            'deployment_in_progress': {
+                label: 'Deployment in progress',
+                sequence: 50
+            },
+            'deployment_manual_interaction': {
+                label: 'Deployment needs manual interaction',
+                sequence: 60
+            },
+            'build_failed': {
+                label: 'Build failed',
+                sequence: 70
+            },
+            'complete': {
+                label: 'Build complete',
+                sequence: 80
+            }
+        };
+    
+        var stateChoice = stateOpt[state];
+        if (stateChoice) {
+            var cl = new GlideRecord('sys_choice');
+            cl.addEncodedQuery('name=sys_update_set^element=state^value=' + state + '^ sequence=' + stateChoice.sequence);
+            cl.setLimit(1);
+            cl._query();
+            if (!cl._next()) {
+                cl.initialize();
+                cl.language = 'en';
+                cl.inactive = true;
+                cl.label = stateChoice.label;
+                cl.sequence = stateChoice.sequence;
+                cl.insert();
+            }
+        }
+        */
         var gr = new GlideRecord('sys_update_set');
         if (gr.get(updateSetSysId)) {
             gr.setValue('state', state);
@@ -165,7 +281,6 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
         } else {
             return new sn_ws_err.NotFoundError('No Record found.');
         }
-
     },
 
 
@@ -247,7 +362,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
 
         // send 404 in case no row match
         if (totalRows === 0) {
-            return new sn_ws_err.NotFoundError('No Record found. Query: '.concat(query));
+            return [];//new sn_ws_err.NotFoundError('No Record found. Query: '.concat(query));
         }
     
         var totalPage = Math.ceil(totalRows / limit),
