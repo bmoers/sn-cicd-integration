@@ -75,7 +75,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
     /**
      * Get User information by userId
      *
-     * mapped to GET /api/swre/v1/cicd/user/{userId}
+     * mapped to GET /api/devops/v1/cicd/user/{userId}
      * 
      * @param {String} userId value of the user_name field
      * @returns {any} the user details
@@ -94,7 +94,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
     /**
      * Get the details of an update-set
      * 
-     * mapped to GET /api/swre/v1/cicd/updateset/{updateSetSysId}
+     * mapped to GET /api/devops/v1/cicd/updateset/{updateSetSysId}
      *
      * @param {String} updateSetSysId
      * @returns {any} the update-set details
@@ -108,7 +108,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
     /**
      * Get all XMl records of an update-set
      *
-     * mapped to GET /api/swre/v1/cicd/updateset_files/{updateSetSysId}
+     * mapped to GET /api/devops/v1/cicd/updateset_files/{updateSetSysId}
      * 
      * @param {String} updateSetSysId
      * @returns {any} the update-set XML records
@@ -126,7 +126,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
     /**
      * Export an update-set
      * 
-     * mapped to GET /api/swre/v1/cicd/export_updateset/{updateSetSysId}
+     * mapped to GET /api/devops/v1/cicd/export_updateset/{updateSetSysId}
      * @returns {any} all test assigned to a test suite
      */
     exportUpdateSet: function (updateSetSysId) {
@@ -172,7 +172,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
      * Get all ATF Test which are assigned to a TestSuite. <br>
      * This is used to exclude the test from the ATF runs to avoid running twice.
      * 
-     * mapped to GET /api/swre/v1/cicd/test_in_suites
+     * mapped to GET /api/devops/v1/cicd/test_in_suites
      * @returns {any} all test assigned to a test suite
      */
     getAllTestInSuites: function () {
@@ -186,7 +186,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
     /**
      * This is a wrapper to give access to any kind of table extending sys_metadata
      * 
-     * mapped to GET /api/swre/v1/cicd/file/{tableName}
+     * mapped to GET /api/devops/v1/cicd/file/{tableName}
      * 
      * @param {String} tableName the table to read from
      * @returns {any} the records from the corresponding table
@@ -208,7 +208,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
     /**
      * Change the state of an update-set
      * 
-     * mapped to PATCH /api/swre/v1/cicd/updateset_status/{updateSetSysId}
+     * mapped to PATCH /api/devops/v1/cicd/updateset_status/{updateSetSysId}
      * 
      * @param {String} updateSetSysId the update-set sys_id
      * @returns {any} the update-set

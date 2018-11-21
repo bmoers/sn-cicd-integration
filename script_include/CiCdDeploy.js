@@ -120,7 +120,7 @@ CiCdDeploy.prototype = {
      *  </ul>
      * </p>
      *
-     * This is mapped to POST: /api/swre/v1/cicd/deploy
+     * This is mapped to POST: /api/devops/v1/cicd/deploy
      * 
      * @returns {undefined}
      */
@@ -224,7 +224,7 @@ CiCdDeploy.prototype = {
             }
 
             // call target instance to load the update set
-            var endpoint = targetEnvironment.concat('/api/swre/v1/cicd/pull'), // pullUpdateSet()
+            var endpoint = targetEnvironment.concat('/api/devops/v1/cicd/pull'), // pullUpdateSet()
                 requestBody = {
                     updateSetSysId: updateSetSysId,
                     sourceEnvironment: sourceEnvironment,
@@ -307,7 +307,7 @@ CiCdDeploy.prototype = {
 
 
     /**
-     * This is mapped to GET: /api/swre/v1/cicd/deploy
+     * This is mapped to GET: /api/devops/v1/cicd/deploy
      */
     processUpdateSetDeploySteps: function () {
         var self = this;
@@ -626,7 +626,7 @@ CiCdDeploy.prototype = {
             /*
             self.response.setStatus(202);
             self.response.setHeader("Location",
-                '/api/swre/v1/cicd/queue?trackerId='.concat(trackerId, '&payload=', encodeURIComponent(JSON.stringify(payload)))
+                '/api/devops/v1/cicd/queue?trackerId='.concat(trackerId, '&payload=', encodeURIComponent(JSON.stringify(payload)))
             );
             */
         } catch (e) {
@@ -656,7 +656,7 @@ CiCdDeploy.prototype = {
 
         self.response.setStatus(status);
         self.response.setHeader("Location",
-            (host || gs.getProperty('glide.servlet.uri').toLowerCase()).concat('/api/swre/v1/cicd/deploy?', queryParams.join('&'))
+            (host || gs.getProperty('glide.servlet.uri').toLowerCase()).concat('/api/devops/v1/cicd/deploy?', queryParams.join('&'))
         );
         return;
     },
@@ -665,7 +665,7 @@ CiCdDeploy.prototype = {
      * Target API. This API is called from the source env see {@link global.module:sys_script_include.CiCdDeploy#deployUpdateSet}.<br>
      * If required, it creates and configures a local update-set-source, pulls the Update-Set from the source env and returns preview status.<br>
      * 
-     * This is mapped to POST: /api/swre/v1/cicd/pull
+     * This is mapped to POST: /api/devops/v1/cicd/pull
      * @returns {undefined}
      */
     pullUpdateSet: function () {

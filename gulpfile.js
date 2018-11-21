@@ -74,6 +74,7 @@ gulp.task('script', function () {
     return gulp.src(paths, { base: "./" })
         .pipe(using({}))
         .pipe(replace(new RegExp(process.env.USERNAME, 'ig'), 'b.moers'))
+        .pipe(replace(`/${process.env.REPLACE_NAMESPACE}/`, '/devops/'))
         .pipe(gulp.dest('./'));
 });
 

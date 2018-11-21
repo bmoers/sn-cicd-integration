@@ -102,7 +102,7 @@ CiCdAtf.prototype = /** @lends global.module:sys_script_include.CiCdAtf.prototyp
     /**
      * Execute a Test-Suite<br>
      * 
-     * mapped to POST /api/swre/v1/cicd/atf/suite
+     * mapped to POST /api/devops/v1/cicd/atf/suite
      * @returns {any} out
      */
     executeSuite: function () {
@@ -176,7 +176,7 @@ CiCdAtf.prototype = /** @lends global.module:sys_script_include.CiCdAtf.prototyp
     /**
      * Tet Test-Suite results<br>
      * 
-     * mapped to GET /api/swre/v1/cicd/atf/suite/{id}
+     * mapped to GET /api/devops/v1/cicd/atf/suite/{id}
      * @returns {any} out
      */
     getSuiteResults: function () {
@@ -208,7 +208,7 @@ CiCdAtf.prototype = /** @lends global.module:sys_script_include.CiCdAtf.prototyp
 
     /**
      * Execute a single Test<br>
-     * mapped to POST /api/swre/v1/cicd/atf/test
+     * mapped to POST /api/devops/v1/cicd/atf/test
      * @returns {any} out
      */
     executeTest: function () {
@@ -275,7 +275,7 @@ CiCdAtf.prototype = /** @lends global.module:sys_script_include.CiCdAtf.prototyp
 
     /**
      * Get Single Test Results<br>
-     * mapped to GET /api/swre/v1/cicd/atf/test/{id}
+     * mapped to GET /api/devops/v1/cicd/atf/test/{id}
      * @returns {any}
      */
     getTestResults: function () {
@@ -289,7 +289,7 @@ CiCdAtf.prototype = /** @lends global.module:sys_script_include.CiCdAtf.prototyp
 
     /**
      * Get the execution state of a test run<br>
-     * mapped to GET /api/swre/v1/cicd/atf/track/{id}
+     * mapped to GET /api/devops/v1/cicd/atf/track/{id}
      * @returns {any}
      */
     getExecutionTrackerState: function () {
