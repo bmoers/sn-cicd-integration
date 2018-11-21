@@ -1,5 +1,10 @@
+require('dotenv').config();
 
 const gulp = require('gulp');
+const rename = require('gulp-rename');
+const clean = require('gulp-clean');
+const notify = require('gulp-notify');
+const using = require('gulp-using');
 const replace = require('gulp-replace');
 
 const arg = (argList => {
@@ -24,7 +29,7 @@ gulp.task('namespace', function () {
 
     /*
         if you want to install this US in your own company namespace,
-        set it below and run 'gulp namespace'
+        set it below and run 'gulp namespace --name your-name-space'
     */
     
     const customNameSpace = arg.name;
@@ -32,25 +37,46 @@ gulp.task('namespace', function () {
         throw Error('run: gulp namespace --name your-name-space')
 
     console.log(`Replacing namespace with '${customNameSpace}'`);
-    return;
     
     var paths = [
         "update_set/**/*.xml"
     ];
-    gulp.src(paths, { base: "./" })
-        .pipe(replace('<namespace>swre</namespace>', `<namespace>${customNameSpace}</namespace>`))
-        .pipe(replace('/swre/', `/${customNameSpace}/`))
+    return gulp.src(paths, { base: "./" })
+        .pipe(replace('<namespace>devops</namespace>', `<namespace>${customNameSpace}</namespace>`))
+        .pipe(replace('/devops/', `/${customNameSpace}/`))
+        .pipe(rename({
+            basename: `CICD Integration-${customNameSpace}`
+        }))
         .pipe(gulp.dest('./'));
 
 });
 
+gulp.task('clean', function (done) {
+    return gulp.src(['update_set/**/*.*'], { read: false })
+        .pipe(using({}))
+        .pipe(clean());
+});
 
-gulp.task('default', function () {
-    var paths = [
-        "update_set/**/*.xml",
-        "script_include/**/*.js"
-    ];
-    gulp.src(paths, { base: "./" })
+gulp.task('update-set', function () {
+    return gulp.src('original/sys_remote_update_set_*.xml')
+        .pipe(replace(new RegExp(process.env.REPLACE_COMPANY, 'ig'), 'company'))
+        .pipe(replace(`<namespace>${process.env.REPLACE_NAMESPACE || 'devops'}</namespace>`, '<namespace>devops</namespace>'))
+        .pipe(replace(`/${process.env.REPLACE_NAMESPACE}/`, '/devops/'))
+        .pipe(replace(new RegExp(process.env.USERNAME, 'ig'), 'b.moers'))
+        .pipe(rename({
+            basename: "CICD Integration"
+        }))
+        .pipe(gulp.dest('update_set/.'));
+});
+
+gulp.task('script', function () {
+    var paths = ['script_include/**/*.js', 'processor/**/*.js'];
+    return gulp.src(paths, { base: "./" })
+        .pipe(using({}))
         .pipe(replace(new RegExp(process.env.USERNAME, 'ig'), 'b.moers'))
         .pipe(gulp.dest('./'));
 });
+
+gulp.task('default', function () {
+    return gulp.start(['clean', 'update-set', 'script']);
+})
