@@ -596,7 +596,6 @@ CiCdDeploy.prototype = {
                 Commit the update set.
                 code from /sys_script_include.do ? sys_id = d14a6c27eff22000c6845a3615c0fb5d
             */
-            /*
             var commitResult = new UpdateSetCommitAjax((function () {
                 var params = {
                     sysparm_type: 'commitRemoteUpdateSet',
@@ -609,11 +608,9 @@ CiCdDeploy.prototype = {
                 };
             })(), new GlideXMLDocument(), '').process();
             var progress_id = commitResult.split(',')[0];
-            */
 
-
-            var worker = new SNC.HierarchyUpdateSetScriptable();
-            var progress_id = worker.commitHierarchy(payload.remoteUpdateSetSysId);
+            //var worker = new SNC.HierarchyUpdateSetScriptable();
+            //var progress_id = worker.commitHierarchy(payload.remoteUpdateSetSysId);
 
 
             self.assign(payload, {
