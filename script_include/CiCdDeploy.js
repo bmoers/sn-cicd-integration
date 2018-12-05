@@ -105,6 +105,12 @@ CiCdDeploy.prototype = {
         return out;
     },
 
+    getBaseURI: function () {
+        var self = this;
+        // get base uri out of '/api/devops/v101/cicd/pull' or '/api/devops/cicd/pull'
+        var tmp = self.request.uri.split('/');
+        return tmp.slice(0, (/^v\d+$/m.test(tmp[3]) ? 5 : 4)).join('/')
+    },
 
     /**
      * Source API. <br>This is the entry point to trigger a deployment on a target env.
@@ -241,7 +247,8 @@ CiCdDeploy.prototype = {
             }
 
             // call target instance to load the update set
-            var endpoint = targetEnvironment.concat('/api/devops/v1/cicd/pull'), // pullUpdateSet()
+            
+            var endpoint = targetEnvironment.concat(self.getBaseURI(), '/pull'), // pullUpdateSet()
                 requestBody = {
                     updateSetSysId: updateSetSysId,
                     limitSet: limitSet.join(','),
@@ -656,12 +663,7 @@ CiCdDeploy.prototype = {
             });
 
             return self._sendLocation(202, payload); // job create, return 'accepted'
-            /*
-            self.response.setStatus(202);
-            self.response.setHeader("Location",
-                '/api/devops/v1/cicd/queue?trackerId='.concat(trackerId, '&payload=', encodeURIComponent(JSON.stringify(payload)))
-            );
-            */
+            
         } catch (e) {
             gs.error(e.message);
             return new sn_ws_err.BadRequestError(e.message);
@@ -690,7 +692,7 @@ CiCdDeploy.prototype = {
 
         self.response.setStatus(status);
         self.response.setHeader("Location",
-            (host || gs.getProperty('glide.servlet.uri').toLowerCase()).concat('/api/devops/v1/cicd/deploy?', queryParams.join('&'))
+            (host || gs.getProperty('glide.servlet.uri').toLowerCase()).concat(self.getBaseURI(), '/deploy?', queryParams.join('&'))
         );
         return;
     },
