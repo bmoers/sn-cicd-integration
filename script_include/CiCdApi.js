@@ -105,6 +105,21 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
         return self._getGrResultStream('sys_update_set', updateSetSysId, {});
     },
 
+
+    /**
+     * Get the details of an Scope / App
+     * 
+     * mapped to GET /api/devops/v1/cicd/scope/{scopeId}
+     *
+     * @param {String} scopeId
+     * @returns {any} the update-set details
+     */
+    getScopeDetails: function (scopeId) {
+        var self = this;
+
+        return self._getGrResultStream('sys_scope', scopeId, {});
+    },
+
     /**
      * Get all XMl records of an update-set
      *
@@ -195,12 +210,12 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
         var self = this,
             rootTable = null;
 
-        if ('sys_metadata' != tableName) {
-            var extendsSyMeta = new TableUtils(tableName).getHierarchy().toArray().some(function (table) {
-                return ('sys_metadata' == table);
+        if ('sys_metadata' != tableName || 'sys_scope' != tableName) {
+            var pass = new TableUtils(tableName).getHierarchy().toArray().some(function (table) {
+                return ('sys_metadata' == table || 'sys_scope' == table);
             });
-            if (!extendsSyMeta)
-                return [];//new sn_ws_err.NotFoundError('No Record found on table ' + tableName);
+            if (!pass)
+                return [];
         }
         return self._getGrResultStream(tableName, null, {});
     },
@@ -300,7 +315,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
         var self = this;
 
         defaultParams = defaultParams || {};
-        var singleObject = (sysId);
+        var singleObject = Boolean(sysId);
         if (singleObject) {
             defaultParams.sysparm_suppress_pagination_header = 'true';
         }

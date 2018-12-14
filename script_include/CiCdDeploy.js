@@ -403,7 +403,9 @@ CiCdDeploy.prototype = {
         */
         limitSet.forEach(function (updateSetSysId) {
             var rus = new GlideRecord('sys_remote_update_set');
-            if (rus.get('remote_sys_id', updateSetSysId)) {
+            rus.addQuery('remote_sys_id', updateSetSysId);
+            rus._query();
+            while (rus._next()) {
                 
                 var lus = new GlideRecord('sys_update_set');
                 lus.addQuery('sys_id', rus.getValue('update_set'));
@@ -543,7 +545,7 @@ CiCdDeploy.prototype = {
             gs.info("UpdateSetPreviewer completed progress_id: {0}", progress_id);
 
             self.assign(payload, {
-                state: state,
+                state: "previewing",
                 progressId: progress_id,
                 remoteUpdateSetSysId: remoteUpdateSetSysId,
                 step: 'commitUpdateSet'
@@ -759,7 +761,7 @@ CiCdDeploy.prototype = {
                 if (gs.nil(sourceSysId))
                     throw Error('Somethings wrong with the creation of sys_update_set_source. CD User must have admin grants.');
 
-                gs.info("sys_update_set_source {0}", sourceSysId);
+                gs.info("[CICD] : pullUpdateSet() sys_update_set_source {0}", sourceSysId);
 
             } catch (e) {
                 // remove the record completely 
