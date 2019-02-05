@@ -176,12 +176,86 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
         } else {
             return new sn_ws_err.BadRequestError('Somethings wrong here... '.concat(current.getEncodedQuery()));
         }
+        
     },
 
-    // TODO - convert app to update-set
+    /**
+     * convert a scoped app to update-set
+     * 
+     * GET to /api/swre/cicd/export_application/{appId}
+     * @param {*} appId 
+     */
     publishToUpdateSet: function (appId) { 
+        var self = this;
+        /*
+        if (!gs.getUser().getRoles().contains('admin'))
+            throw Error('User must have admin grants.');
+        */
+        var sc = new GlideRecord('sys_scope');
+        if (sc.get(appId)) {
 
+            var us = new GlideUpdateSet();
+            var usm = new GlideUpdateManager2();
+            var currentUS = us.get();
+
+            gs.info('[CICD API] create new update set');
+            var us = new GlideRecord('sys_update_set');
+            us.initialize();
+            us.setValue('name', sc.getValue('name').concat(' – ', sc.getValue('version')));
+            us.setValue('application', appId);
+            us.setValue('state', 'build');
+            us.setValue('description', 'Automatically created by CICD Process'.concat(sc.getValue('short_description') ? '\n'.concat(sc.getValue('short_description')) : ''))
+            var updateSetSysId = us.insert();
+
+            // make new update-set active
+            us.set(updateSetSysId);
+            // add scope to update set
+            usm.saveRecord(sc);
+
+            /*
+                as OOB sys_metadata_link records are not exported into an update set, this seems to be even the 
+                better way of doing it.
+                e.g add a trigger via "add to application" ui action to a scoped app (this will create a sys_metadata_link record), export the app as update set (via ui action)
+                and the sys_metadata_link is missing.
+            */
+
+            var meta = new GlideRecord('sys_metadata');
+            meta.addQuery('sys_scope', appId);
+            meta._query();
+            var queryStore = {};
+            while (meta._next()) {
+                var className = meta.getRecordClassName();
+                if (queryStore[className] === undefined)
+                    queryStore[className] = [];
+
+                queryStore[className].push(meta.getValue('sys_id'))
+            }
+
+            gs.info('[CICD API] add all files to the update set');
+            Object.keys(queryStore).forEach(function (tableName) {
+                gs.info('[CICD API] add files from '+ tableName);
+                var appFiles = new GlideRecord(tableName);
+                appFiles.addQuery('sys_id', 'IN', queryStore[tableName]);
+                appFiles._query();
+                while (appFiles._next()) {
+                    // make new update-set active -- in case multiple jobs run at the same time
+                    us.set(updateSetSysId);
+                    // save the record
+                    usm.saveRecord(appFiles);
+                }
+            });
+            
+            us.set(currentUS);
+
+            return {
+                updateSetSysId: updateSetSysId
+            };
+        } else {
+            throw "not found";
+        }
     },
+
+
 
     /**
      * Get all ATF Test which are assigned to a TestSuite. <br>
