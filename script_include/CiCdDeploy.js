@@ -117,7 +117,7 @@ CiCdDeploy.prototype = {
      * takes updateSetSysId and targetEnvironment from payload body. <p>
      *  It: 
      *  <ul>
-     *  <li>creates a local admin user with a random password</li>
+     *  <li>can create a local admin user with a random password</li>
      *  <li>sends a pull request for the update-set to the target containing
      *  <ul><li>User Credentials (encrypted)</li><li>Update Set ID</li><li>Source environment</li>
      *  </li>
@@ -133,29 +133,13 @@ CiCdDeploy.prototype = {
     deployUpdateSet: function () {
         var self = this;
         var userSysId,
-            roleSysId, updateSetSysId, sourceEnvironment, targetEnvironment, limitSet = [],
+            roleSysId, updateSetSysId, commitId, sourceEnvironment, targetEnvironment, limitSet = [],
             sourceUserName, sourcePassword,
-            targetUserName, targetPassword;
+            targetUserName, targetPassword,
+            autoCreateCdUser,
+            gitDeployment, sourceUrl, deploy;
 
         try {
-
-            if (!gs.getUser().getRoles().contains('admin'))
-                throw Error('CD User must have admin grants.');
-            
-            if (!self.body) {
-                gs.error('no request payload found');
-                throw Error('deployUpdateSet: no request payload found');
-            }
-            if (gs.nil(self.body.updateSetSysId) || gs.nil(self.body.targetEnvironment)) {
-                throw Error('updateSetSysId and targetEnvironment are mandatory');
-            }
-
-
-            updateSetSysId = self.body.updateSetSysId; // request.updateSetId
-            sourceEnvironment = gs.getProperty('glide.servlet.uri').toLowerCase(); // the current instance
-            targetEnvironment = self.body.targetEnvironment.host.toLowerCase(); 
-            targetUserName = self.body.targetEnvironment.username;
-            targetPassword = self.body.targetEnvironment.password;
 
             /*
                 {
@@ -164,58 +148,136 @@ CiCdDeploy.prototype = {
                         "host": "https://targethost.service-now.com",
                         "username": "",
                         "password": ""
+                    },
+                    "sourceEnvironment": {
+                        "username": "",
+                        "password": ""
                     }
                 }
             */
 
-            var auth = self.request.getHeader('authorization') || '';
-            var authOpt = auth.split(/\s/);
-            if (authOpt[0] && 'basic' == authOpt[0].toLowerCase()) {
-                var credentials = ''.concat(new GlideStringUtil().base64Decode(authOpt[1])).split(/:(.+)/);
-                sourceUserName = credentials[0];
-                sourcePassword = credentials[1];
+            /*
+            if (!gs.getUser().getRoles().contains('admin'))
+                throw Error('CD User must have admin grants.');
+            */
+
+            if (!self.body) {
+                gs.error('no request payload found');
+                throw Error('deployUpdateSet: no request payload found');
+            }
+            if (gs.nil(self.body.commitId || self.body.updateSetSysId) || gs.nil(self.body.targetEnvironment) || gs.nil(self.body.targetEnvironment.host)) {
+                throw Error('updateSetSysId/commitId and targetEnvironment are mandatory');
             }
 
-            if (targetEnvironment == sourceEnvironment) {
+            commitId = self.body.commitId;
+            updateSetSysId = self.body.updateSetSysId; // request.updateSetId
+            sourceEnvironment = gs.getProperty('glide.servlet.uri').toLowerCase(); // the current instance
+            gitDeployment = !gs.nil(self.body.commitId);
+            deploy = self.body.deploy;
+            sourceUrl = gitDeployment ? sourceEnvironment.concat('api/devops/cicd/source/') : sourceEnvironment;
+
+            targetEnvironment = self.body.targetEnvironment.host.toLowerCase();
+            targetUserName = self.body.targetEnvironment.username;
+            targetPassword = self.body.targetEnvironment.password;
+
+            if (self.body.sourceEnvironment) {
+                sourceUserName = self.body.sourceEnvironment.username;
+                sourcePassword = self.body.sourceEnvironment.password;
+            }
+
+            autoCreateCdUser = ('true' == gs.getProperty('cicd-integration.auto-create-cd-user', 'false'));
+
+            var targetMatch = targetEnvironment.match(/(?:http[s]?:\/\/)([^\.]*)([^:\/]*)/i);
+            if (!targetMatch || targetMatch[2] !== '.service-now.com') // protect from sending credentials with high privileges to a non service-now.com host
+                throw Error('invalid host');
+
+            var sourceMatch = sourceEnvironment.match(/(?:http[s]?:\/\/)([^\.]*)([^:\/]*)/i);
+            if (!sourceMatch || !sourceMatch[1])
+                throw Error('invalid host');
+
+            if (sourceMatch[1] == sourceMatch[1])
                 throw Error('source and target can not be same');
-            }
 
-            var us = new GlideRecord('sys_update_set');
-            if (!us.get(updateSetSysId)) 
-                throw Error('UpdateSet not found');
-            
-            if (us.getValue('state') != 'complete') {
-                throw Error('UpdateSet is Not in complete state');
-            }
-            
-            if (us.base_update_set.nil()) {
-                limitSet.push(updateSetSysId);
-            } else {
-                var baseSysId = us.getValue('base_update_set');
-                if (updateSetSysId != baseSysId)
-                    throw Error('This update-set is member of a batch. Parent must be deployed: ' + baseSysId);
-                
-                var bus = new GlideRecord('sys_update_set');
-                bus.addQuery('base_update_set', updateSetSysId);
-                bus._query();
-                while (bus._next()) {
-                    limitSet.push(bus.getValue('sys_id'));
+
+            if (gitDeployment) { // git 2 snow deployment
+                updateSetSysId = commitId;
+                limitSet.push(commitId);
+
+            } else { // for snow 2 snow deployment, check us state etc
+                var us = new GlideRecord('sys_update_set');
+                if (!us.get(updateSetSysId))
+                    throw Error('UpdateSet not found');
+
+                if (us.getValue('state') != 'complete') {
+                    throw Error('UpdateSet is not in complete state');
+                }
+
+                if (us.base_update_set.nil()) {
+                    limitSet.push(updateSetSysId);
+                } else {
+                    var baseSysId = us.getValue('base_update_set');
+                    if (updateSetSysId != baseSysId)
+                        throw Error('This update-set is member of a batch. Parent must be deployed: ' + baseSysId);
+
+                    var bus = new GlideRecord('sys_update_set');
+                    bus.addQuery('base_update_set', updateSetSysId);
+                    bus._query();
+                    while (bus._next()) {
+                        limitSet.push(bus.getValue('sys_id'));
+                    }
                 }
             }
-            
 
-            if (!sourceUserName || !sourcePassword) {
-                
-                // create user on source instance
+
+            if (!autoCreateCdUser) {
+                /*
+                // use user from request
+                var auth = self.request.getHeader('authorization') || '';
+                var authOpt = auth.split(/\s/);
+                if (authOpt[0] && 'basic' == authOpt[0].toLowerCase()) {
+                    var credentials = ''.concat(new GlideStringUtil().base64Decode(authOpt[1])).split(/:(.+)/);
+                    sourceUserName = credentials[0];
+                    sourcePassword = credentials[1];
+                }
+                */
+
+                if (!sourceUserName || !sourcePassword)
+                    throw Error('source credentials not specified');
+
+                // check if use has right roles
+                var adminRoles = [];
+                var adminRole = new GlideRecord('sys_user_role');
+                adminRole.addQuery('name', 'IN', ['admin', 'teamdev_user']);
+                adminRole._query();
+                while (adminRole._next()) {
+                    adminRoles.push(adminRole.getValue('sys_id'));
+                }
+
                 var user = new GlideRecord('sys_user');
-                sourceUserName = '_CICD_DEPLOYMENT_'.concat(new GlideChecksum(targetEnvironment).getMD5()).substr(0, 40);
+                if (!user.get('user_name', sourceUserName))
+                    throw Error('source user not specified'); // same error as above to not expose user existence
+
+                var roleAssignment = new GlideRecord('sys_user_has_role');
+                roleAssignment.addQuery('user', user.getValue('sys_id'));
+                roleAssignment.addQuery('role', 'IN', adminRoles);
+                roleAssignment.addQuery('state', 'active');
+                roleAssignment._query();
+                if (!roleAssignment._next())
+                    throw Error('source user has not the appropriate role');
+
+            } else {
+
+                // create user on source instance
+                var userUniqueId = sourceUrl.concat(' to ', targetEnvironment);
+                var user = new GlideRecord('sys_user');
+                sourceUserName = '_CICD_DEPLOYMENT_'.concat(new GlideChecksum(userUniqueId).getMD5()).substr(0, 40);
                 sourcePassword = null;
 
                 if (user.get('user_name', sourceUserName)) {
                     userSysId = user.getValue('sys_id');
-                    if (user.getValue('last_name') !== targetEnvironment) {
+                    if (user.getValue('last_name') !== userUniqueId) {
                         user.setValue('first_name', 'CD-User for');
-                        user.setValue('last_name', targetEnvironment);
+                        user.setValue('last_name', userUniqueId);
                         user.update();
                     }
                 } else {
@@ -226,14 +288,14 @@ CiCdDeploy.prototype = {
                     user.setValue('user_name', sourceUserName);
                     user.setDisplayValue('user_password', sourcePassword);
                     user.setValue('first_name', 'CD-User for');
-                    user.setValue('last_name', targetEnvironment);
+                    user.setValue('last_name', userUniqueId);
                     userSysId = user.insert();
                     if (!userSysId)
                         throw Error('CICdDeploy: User not created. sys_update_set_source on \'' + targetEnvironment + '\' for host \'' + sourceEnvironment + '\' needs to be created manually');
 
-                    // assign admin role
+                    // assign teamdev_user or admin role (whatever exists first)
                     var adminRole = new GlideRecord('sys_user_role');
-                    if (adminRole.get('name', 'admin')) {
+                    if (adminRole.get('name', 'teamdev_user') || adminRole.get('name', 'admin')) {
                         var roleAssignment = new GlideRecord('sys_user_has_role');
                         roleAssignment.initialize();
                         roleAssignment.setValue('user', userSysId);
@@ -243,25 +305,28 @@ CiCdDeploy.prototype = {
                     } else {
                         throw Error('CICdDeploy: admin role not found. ' + sourceUserName + ' will not have the correct grants to have this working');
                     };
-                }                    
+                }
             }
 
             // call target instance to load the update set
-            
+
             var endpoint = targetEnvironment.concat(self.getBaseURI(), '/pull'), // pullUpdateSet()
                 requestBody = {
                     updateSetSysId: updateSetSysId,
-                    limitSet: limitSet.join(','),
+                    limitSet: limitSet.join(','), // <-- this are actually the US to be deployed
                     sourceEnvironment: sourceEnvironment,
+                    gitDeployment: gitDeployment,
+                    deploy: deploy,
+                    sourceUrl: sourceUrl,
                     credentials: {
                         user: sourceUserName,
                         password: (sourcePassword) ? new GlideEncrypter().encrypt(sourcePassword) : null
                     }
                 };
-            
+
             var request = new sn_ws.RESTMessageV2();
             request.setEndpoint(endpoint);
-            
+
             if (targetUserName && targetPassword) {
                 request.setBasicAuth(targetUserName, targetPassword);
             } else {
@@ -297,7 +362,6 @@ CiCdDeploy.prototype = {
 
 
         } catch (e) {
-            self.teardownSource(roleSysId, userSysId);
             gs.error(e.message);
             return new sn_ws_err.BadRequestError(e.message);
 
@@ -334,14 +398,14 @@ CiCdDeploy.prototype = {
                 prev[key] = self.getQueryParam(key);
                 return prev;
             }, {});
-            
+
             //var payload = JSON.parse(decodeURIComponent(self.getQueryParam('p')));
-            
+
             if (!Object.keys(payload))
                 throw Error('processUpdateSetDeploySteps: no request payload found');
 
             var progressId = payload.progressId;
-            
+
             if (payload.targetEnvironment == gs.getProperty('glide.servlet.uri').toLowerCase()) {
 
                 if (!gs.nil(progressId)) {
@@ -397,7 +461,7 @@ CiCdDeploy.prototype = {
 
         var sourceSysId = payload.sourceSysId,
             limitSet = (payload.limitSet || '').split(',');
-        
+
         /*
             if this update set was already loaded, delete it.
         */
@@ -406,7 +470,7 @@ CiCdDeploy.prototype = {
             rus.addQuery('remote_sys_id', updateSetSysId);
             rus._query();
             while (rus._next()) {
-                
+
                 var lus = new GlideRecord('sys_update_set');
                 lus.addQuery('sys_id', rus.getValue('update_set'));
                 /*
@@ -427,7 +491,7 @@ CiCdDeploy.prototype = {
                 rus.deleteRecord();
             }
         });
-        
+
 
         /*
             run worker to load the update set from remote
@@ -592,7 +656,7 @@ CiCdDeploy.prototype = {
                         status: 'failure'
                     };
                 }
-                
+
                 var del = new GlideRecord('sys_update_xml');
                 del.addQuery('action=DELETE^'.concat('remote_update_set=', payload.remoteUpdateSetSysId, '^ORremote_update_set.remote_base_update_set=', payload.remoteUpdateSetSysId, '^nameDOES NOT CONTAINsys_dictionary_override^nameSTARTSWITHsys_dictionary^ORnameSTARTSWITHsys_db_object^ORnameSTARTSWITHvar_dictionary^ORnameSTARTSWITHsvc_extension_variable^ORnameSTARTSWITHwf_activity_variable^ORnameSTARTSWITHatf_input_variable^ORnameSTARTSWITHatf_output_variable^ORnameSTARTSWITHsys_atf_variable^ORnameSTARTSWITHsys_atf_remembered_values^ORDERBYtype^ORDERBYname'));
                 //gs.info("[CICD] : problem lookup query" + del.getEncodedQuery())
@@ -620,42 +684,45 @@ CiCdDeploy.prototype = {
                 return self.response.setBody(error); //self.response.setError()
             }
 
-            var rus = new GlideRecord('sys_remote_update_set');
-            if (rus.get(payload.remoteUpdateSetSysId)) { 
-                if (rus.remote_base_update_set.nil()) { 
-                    /*
-                        Commit the update set.
-                        code from /sys_ui_action.do?sys_id=c38b2cab0a0a0b5000470398d9e60c36 
-                        calling /sys_script_include.do?sys_id=d14a6c27eff22000c6845a3615c0fb5d
-                    */
-                    var commitResult = new UpdateSetCommitAjax((function () {
-                        var params = {
-                            sysparm_type: 'commitRemoteUpdateSet',
-                            sysparm_remote_updateset_sys_id: payload.remoteUpdateSetSysId
-                        };
-                        return {
-                            getParameter: function (paramName) {
-                                return params[paramName];
-                            }
-                        };
-                    })(), new GlideXMLDocument(), '').process();
-                    var progress_id = commitResult.split(',')[0];
-                } else {
-                    /*
-                        HierarchyUpdateSetCommitAjax
-                        code from /sys_ui_action.do?sys_id=addc9e275bb01200abe48d5511f91a78
-                        calling /sys_script_include.do?sys_id=fcfc9e275bb01200abe48d5511f91aea
-                    */
-                    var updateSet = new GlideRecord("sys_remote_update_set");
-                    if (updateSet.get(rus.remote_base_update_set)) {
-                        var worker = new SNC.HierarchyUpdateSetScriptable();
-                        var progress_id = worker.commitHierarchy(updateSet.sys_id);
+            // only commit if 'deploy' is set
+            if (payload.deploy) {
+                var rus = new GlideRecord('sys_remote_update_set');
+                if (rus.get(payload.remoteUpdateSetSysId)) {
+                    if (rus.remote_base_update_set.nil()) {
+                        /*
+                            Commit the update set.
+                            code from /sys_ui_action.do?sys_id=c38b2cab0a0a0b5000470398d9e60c36 
+                            calling /sys_script_include.do?sys_id=d14a6c27eff22000c6845a3615c0fb5d
+                        */
+                        var commitResult = new UpdateSetCommitAjax((function () {
+                            var params = {
+                                sysparm_type: 'commitRemoteUpdateSet',
+                                sysparm_remote_updateset_sys_id: payload.remoteUpdateSetSysId
+                            };
+                            return {
+                                getParameter: function (paramName) {
+                                    return params[paramName];
+                                }
+                            };
+                        })(), new GlideXMLDocument(), '').process();
+                        var progress_id = commitResult.split(',')[0];
                     } else {
-                        throw Error("Batch-UpdateSet not found for update-set with id" + payload.remoteUpdateSetSysId);
-                    }                    
+                        /*
+                            HierarchyUpdateSetCommitAjax
+                            code from /sys_ui_action.do?sys_id=addc9e275bb01200abe48d5511f91a78
+                            calling /sys_script_include.do?sys_id=fcfc9e275bb01200abe48d5511f91aea
+                        */
+                        var updateSet = new GlideRecord("sys_remote_update_set");
+                        if (updateSet.get(rus.remote_base_update_set)) {
+                            var worker = new SNC.HierarchyUpdateSetScriptable();
+                            var progress_id = worker.commitHierarchy(updateSet.sys_id);
+                        } else {
+                            throw Error("Batch-UpdateSet not found for update-set with id" + payload.remoteUpdateSetSysId);
+                        }
+                    }
+                } else {
+                    throw Error("UpdateSet not found with id" + payload.remoteUpdateSetSysId);
                 }
-            } else {
-                throw Error("UpdateSet not found with id" + payload.remoteUpdateSetSysId);
             }
 
             self.assign(payload, {
@@ -665,7 +732,7 @@ CiCdDeploy.prototype = {
             });
 
             return self._sendLocation(202, payload); // job create, return 'accepted'
-            
+
         } catch (e) {
             gs.error(e.message);
             return new sn_ws_err.BadRequestError(e.message);
@@ -679,7 +746,7 @@ CiCdDeploy.prototype = {
         var us = new GlideRecord('sys_update_set');
         if (us.get('remote_sys_id', payload.remoteUpdateSetSysId)) {
             payload.targetUpdateSetSysId = us.getValue('sys_id');
-            payload.state = 'committed';
+            payload.state = (payload.deploy) ? 'committed' : 'delivered';
         }
         return payload;
     },
@@ -687,7 +754,7 @@ CiCdDeploy.prototype = {
 
     _sendLocation: function (status, payload, host) {
         var self = this;
-        
+
         var queryParams = Object.keys(payload).map(function (key) {
             return key.concat('=', encodeURIComponent(payload[key]));
         });
@@ -708,35 +775,36 @@ CiCdDeploy.prototype = {
      */
     pullUpdateSet: function () {
         var self = this,
-            sourceSysId, sourceEnvironment, updateSetSysId, limitSet;
+            sourceSysId, sourceEnvironment, sourceUrl, updateSetSysId, limitSet;
 
         try {
             if (!self.body) {
                 gs.error('no request payload found');
                 throw Error('pullUpdateSet: no request payload found');
             }
-            if (gs.nil(self.body.updateSetSysId) || gs.nil(self.body.sourceEnvironment)) {
-                throw Error('updateSetSysId, sourceEnvironment are mandatory');
-            }
+            [self.body.updateSetSysId, self.body.sourceEnvironment, self.body.limitSet].forEach(function (param) {
+                if (gs.nil(param))
+                    throw Error('updateSetSysId, sourceEnvironment are mandatory');
+            });
 
-            updateSetSysId = self.body.updateSetSysId;
-            limitSet = self.body.limitSet;
-
+            if (!gs.getUser().getRoles().contains('admin'))
+                throw Error('CD User must have admin grants.');
             /*
                 create a dynamic source definition
             */
             try {
 
-                if (!gs.getUser().getRoles().contains('admin'))
-                    throw Error('CD User must have admin grants.');
-                
                 sourceEnvironment = self.body.sourceEnvironment.toLowerCase();
+                updateSetSysId = self.body.updateSetSysId;
+                limitSet = self.body.limitSet;
+                sourceUrl = self.body.sourceUrl || sourceEnvironment;
+                gitDeployment = self.body.gitDeployment || false;
 
                 var source = new GlideRecord('sys_update_set_source'),
-                    name = new GlideChecksum(sourceEnvironment).getMD5().substr(0, 40),
-                    desc = 'CICD deployment source for '.concat(sourceEnvironment, '. DO NOT DELETE OR CHANGE!');
+                    name = new GlideChecksum(sourceUrl).getMD5().substr(0, 40),
+                    desc = 'CICD deployment source for '.concat(sourceUrl, '. DO NOT DELETE OR CHANGE!');
 
-                if (source.get('url', sourceEnvironment)) {
+                if (source.get('url', sourceUrl)) {
                     sourceSysId = source.getValue('sys_id');
                 } else {
                     var credentials = self.body.credentials || {};
@@ -749,12 +817,12 @@ CiCdDeploy.prototype = {
 
                     source.initialize();
 
-                    source.setValue('url', sourceEnvironment);
+                    source.setValue('url', sourceUrl);
                     source.setValue('username', credentials.user);
                     source.setValue('password', new GlideEncrypter().decrypt(credentials.password));
                     source.setValue('name', name);
                     source.setValue('short_description', desc);
-                    source.setValue('type', 'dev');
+                    source.setValue('type', (gitDeployment) ? 'GIT' : 'dev');
                     source.setValue('active', true);
                     sourceSysId = source.insert();
                 }
