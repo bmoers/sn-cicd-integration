@@ -68,11 +68,16 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
             },
         };
 
+        var cicdServerMatch = gs.getProperty('cicd-integration.server.url', '').match(/((?:http[s]?:\/\/)[^\/]*)/i);
+        var cicdServer = (cicdServerMatch) ? cicdServerMatch[1] : 'server-undefined';
+
         self.settings = self.assign({
             cicdEnabled: Boolean(gs.getProperty('cicd-integration.enabled', 'false') == 'true'),
+            cicdOnUpdateSetEnabled: Boolean(gs.getProperty('cicd-integration.enabled.on-update-set', 'false') == 'true'),
+            cicdOnScopedAppsEnabled: Boolean(gs.getProperty('cicd-integration.enabled.on-scoped-app', 'false') == 'true'),
             throughMidServer: Boolean(gs.getProperty('cicd-integration.server.through-mid', 'false') == 'true'),
             midServerName: gs.getProperty('cicd-integration.server.mid-server-name', self.getMidServer()),
-            cicdServerRunURL: gs.getProperty('cicd-integration.server.run-url')
+            cicdServerRunURL: cicdServer.concat('/run')
         }, JSON.parse(JSON.stringify(settings || {})));
     },
 
@@ -88,6 +93,9 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
         var self = this;
 
         if (!self.settings.cicdEnabled)
+            return;
+
+        if (!self.settings.cicdOnUpdateSetEnabled)
             return;
 
         if (gs.nil(current))
@@ -114,6 +122,44 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
     },
 
     /**
+     * UI Action on sys_app to trigger the CICD Pipeline
+     *
+     * @param {GlideRecord} current
+     * @returns {undefined}
+     */
+    sys_appUiAction: function (current) {
+        var self = this;
+
+        if (!self.settings.cicdEnabled)
+            return;
+
+        if (!self.settings.cicdOnScopedAppsEnabled)
+            return;
+
+        if (gs.nil(current))
+            return;
+
+        if (!gs.isInteractive())
+            return;
+
+        var cicdApi = new CiCdApi();
+        var scopedUpdateSet = cicdApi.publishToUpdateSet(current.getValue('sys_id'));
+        gs.addInfoMessage('Application exported as <a href="/sys_update_set.do?sys_id=' + scopedUpdateSet.updateSetSysId + '">update set</a>. CICD Process started.')
+
+        self.now({
+            updateSet: scopedUpdateSet.updateSetSysId,
+            application: {
+                id: current.getValue('sys_id'),             // the id of the application
+                name: current.getValue('name')              // the name of the application
+            },
+            git: {
+                repository: current.getValue('name').toLowerCase().replace(/\s+/g, '_') // assuming the git repo shares the name with the scoped app
+            }
+        });
+
+    },
+
+    /**
      * Send an Update-Set to the CICD Pipeline.
      * 
      * @param {any} opts for options see below
@@ -128,7 +174,7 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
         var user = gs.getUser();
 
         var options = self.assign({
-            updateSet: null,                    // the sys_id of the update set to be extracted
+            updateSet: null,                    // the sys_id of the update set or an application object {application: 'sys_id'} to be extracted
             application: {
                 id: null,                       // either the sys_id of an application (scope) or the id of a container grouping files
                 name: 'undefined'               // the name of the application / container
