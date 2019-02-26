@@ -3,6 +3,9 @@
  * 
  * @class 
  * @author Boris Moers
+ * @requires sn_ws_err.module:sys_script_include.BadRequestError
+ * @requires global.module:sys_script_include.UpdateSetExport
+ * @requires global.module:sys_script_include.TableUtils
  * @requires sn_ws_err.module:sys_script_include.NotFoundError
  * @memberof global.module:sys_script_include
  */
@@ -42,7 +45,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
      * 
      * @param {any} paramName
      * @param {any} defaultValue
-     * @returns {undefined}
+     * @returns {ConditionalExpression}
      */
     getPathParam: function (paramName, defaultValue) {
         var self = this;
@@ -55,7 +58,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
      * 
      * @param {any} paramName
      * @param {any} defaultValue
-     * @returns {undefined}
+     * @returns {ConditionalExpression}
      */
     getQueryParam: function (paramName, defaultValue) {
         var self = this;
@@ -74,7 +77,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
 
     /**
      * Get User information by userId
-     *
+     * 
      * mapped to GET /api/devops/v1/cicd/user/{userId}
      * 
      * @param {String} userId value of the user_name field
@@ -95,7 +98,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
      * Get the details of an update-set
      * 
      * mapped to GET /api/devops/v1/cicd/updateset/{updateSetSysId}
-     *
+     * 
      * @param {String} updateSetSysId
      * @returns {any} the update-set details
      */
@@ -110,7 +113,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
      * Get the details of an Scope / App
      * 
      * mapped to GET /api/devops/v1/cicd/scope/{scopeId}
-     *
+     * 
      * @param {String} scopeId
      * @returns {any} the update-set details
      */
@@ -122,7 +125,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
 
     /**
      * Get all XMl records of an update-set
-     *
+     * 
      * mapped to GET /api/devops/v1/cicd/updateset_files/{updateSetSysId}
      * 
      * @param {String} updateSetSysId
@@ -142,7 +145,8 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
      * Export an update-set
      * 
      * mapped to GET /api/devops/v1/cicd/export_updateset/{updateSetSysId}
-     * @returns {any} all test assigned to a test suite
+     * @param {any} updateSetSysId
+     * @returns {undefined} all test assigned to a test suite
      */
     exportUpdateSet: function (updateSetSysId) {
         var self = this, sysId;
@@ -159,7 +163,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
         */
         if (!current.get(updateSetSysId))
             return new sn_ws_err.BadRequestError('Update-Set Not found.');
-        
+
         var updateSetExport = new UpdateSetExport();
         if (current.base_update_set == current.sys_id) {
             sysId = updateSetExport.exportHierarchy(current);
@@ -176,27 +180,33 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
         } else {
             return new sn_ws_err.BadRequestError('Somethings wrong here... '.concat(current.getEncodedQuery()));
         }
-        
+
     },
 
     /**
      * convert a scoped app to update-set
+     * used in CiCdRun().sys_appUiAction() and exposed on GET to /api/devops/cicd/export_application/{appId}
      * 
-     * GET to /api/swre/cicd/export_application/{appId}
-     * @param {*} appId 
+     * @param {*} appId
+     * @returns {undefined}
      */
-    publishToUpdateSet: function (appId) { 
+    publishToUpdateSet: function (appId) {
         var self = this;
-        /*
+
         if (!gs.getUser().getRoles().contains('admin'))
             throw Error('User must have admin grants.');
-        */
-        var sc = new GlideRecord('sys_scope');
+
+        var sc = new GlideRecord('sys_app');
         if (sc.get(appId)) {
 
-            var us = new GlideUpdateSet();
             var usm = new GlideUpdateManager2();
-            var currentUS = us.get();
+            var gus = new GlideUpdateSet();
+            var currentUS = gus.get();
+
+            //gs.setCurrentApplicationId(appId);
+            var queryStore = {};
+            // add scope to update set
+            queryStore[sc.getRecordClassName()] = [appId];
 
             gs.info('[CICD API] create new update set');
             var us = new GlideRecord('sys_update_set');
@@ -204,27 +214,44 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
             us.setValue('name', sc.getValue('name').concat(' – ', sc.getValue('version')));
             us.setValue('application', appId);
             us.setValue('state', 'build');
-            us.setValue('description', 'Automatically created by CICD Process'.concat(sc.getValue('short_description') ? '\n'.concat(sc.getValue('short_description')) : ''))
+            us.setValue('description', 'Automatically created by CICD Process'.concat(sc.getValue('short_description') ? '\n'.concat(sc.getValue('short_description')) : ''));
             var updateSetSysId = us.insert();
 
             // make new update-set active
-            us.set(updateSetSysId);
-            // add scope to update set
-            usm.saveRecord(sc);
+            gus.set(updateSetSysId);
 
             /*
                 as OOB sys_metadata_link records are not exported into an update set, this seems to be even the 
                 better way of doing it.
                 e.g add a trigger via "add to application" ui action to a scoped app (this will create a sys_metadata_link record), export the app as update set (via ui action)
                 and the sys_metadata_link is missing.
-            */
 
+                sys_metadata_link flags are:
+
+                'new install & upgrade'    > directory == 'update'
+                'new install'              > directory == 'unload'
+                'new install & demo data'  > directory == 'unload.demo'
+
+                TODO: switch to exclude demo data
+            */
             var meta = new GlideRecord('sys_metadata');
             meta.addQuery('sys_scope', appId);
             meta._query();
-            var queryStore = {};
+
             while (meta._next()) {
                 var className = meta.getRecordClassName();
+
+                if ('sys_ui_list' == className) {
+                    var tmp = new GlideRecord(className);
+                    if (tmp.get(meta.getValue('sys_id'))) {
+                        var tableName = tmp.getValue('name');
+                        if (new TableUtils(tableName).getAbsoluteBase() != 'sys_metadata') // this works like OOB, but is wrong. correct would be: !new TableUtils(tableName).getHierarchy().some(function (name) { return (name == 'sys_metadata')})
+                            continue;
+                        if (!gs.nil(tmp.sys_user))
+                            continue;
+                    }
+                }
+
                 if (queryStore[className] === undefined)
                     queryStore[className] = [];
 
@@ -233,19 +260,19 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
 
             gs.info('[CICD API] add all files to the update set');
             Object.keys(queryStore).forEach(function (tableName) {
-                gs.info('[CICD API] add files from '+ tableName);
+                gs.info('[CICD API] add ' + queryStore[tableName].length + ' files from ' + tableName);
                 var appFiles = new GlideRecord(tableName);
                 appFiles.addQuery('sys_id', 'IN', queryStore[tableName]);
                 appFiles._query();
                 while (appFiles._next()) {
                     // make new update-set active -- in case multiple jobs run at the same time
-                    us.set(updateSetSysId);
+                    gus.set(updateSetSysId);
                     // save the record
                     usm.saveRecord(appFiles);
                 }
             });
-            
-            us.set(currentUS);
+
+            gus.set(currentUS);
 
             return {
                 updateSetSysId: updateSetSysId
@@ -300,11 +327,11 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
      * mapped to PATCH /api/devops/v1/cicd/updateset_status/{updateSetSysId}
      * 
      * @param {String} updateSetSysId the update-set sys_id
-     * @returns {any} the update-set
+     * @returns {undefined} the update-set
      */
     setUpdateSetStatus: function (updateSetSysId) {
         var self = this;
-        
+
         var state = (self.body) ? self.body.state : undefined;
         if (state === undefined)
             return new sn_ws_err.BadRequestError('State is mandatory');
@@ -373,19 +400,35 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
     },
 
 
+    /**
+     * Description
+     * 
+     * @param {any} limit
+     * @param {any} offset
+     * @param {any} rel
+     * @returns {any} 
+     */
     _createLink: function (limit, offset, rel) {
         var self = this;
         var queryParams = Object.keys(self.request.queryParams).reduce(function (prev, key) {
             if (['sysparm_limit', 'sysparm_offset'].indexOf(key) === -1) {
-                return prev.concat( [key.concat('=', encodeURIComponent( self.getQueryParam(key) ))] );
+                return prev.concat([key.concat('=', encodeURIComponent(self.getQueryParam(key)))]);
             }
             return prev;
         }, []);
         return '<'.concat(self.request.url, '?', queryParams.concat(['sysparm_limit=' + limit, 'sysparm_offset=' + offset]).join('&'), ';rel="', rel, '">');
     },
 
+    /**
+     * Description
+     * 
+     * @param {any} tableName
+     * @param {any} sysId
+     * @param {any} defaultParams
+     * @returns {undefined}
+     */
     _getGrResultStream: function (tableName, sysId, defaultParams) {
-    
+
         var self = this;
 
         defaultParams = defaultParams || {};
@@ -399,19 +442,19 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
         fields = (fields) ? fields.split(',') : [];
 
         var offset = parseInt(self.getQueryParam('sysparm_offset', 0), 10);
-        var limit  = parseInt(self.getQueryParam('sysparm_limit', defaultParams.sysparm_limit || 10000));
+        var limit = parseInt(self.getQueryParam('sysparm_limit', defaultParams.sysparm_limit || 10000));
 
         var displayValue = self.getQueryParam('sysparm_display_value', 'false');
         var category = self.getQueryParam('sysparm_query_category');
-    
+
         var suppressPaginationLink = defaultParams.sysparm_suppress_pagination_header || self.getQueryParam('sysparm_suppress_pagination_header', 'false');
-    
+
 
         // not implemented....
         var excludeRefLink = self.getQueryParam('sysparm_exclude_reference_link', 'false');
         var view = self.getQueryParam('sysparm_view');
 
-    
+
         // query the table
         var gr = new GlideRecord(tableName);
 
@@ -453,14 +496,14 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
         if (totalRows === 0) {
             return [];//new sn_ws_err.NotFoundError('No Record found. Query: '.concat(query));
         }
-    
+
         var totalPage = Math.ceil(totalRows / limit),
             prevOffset = offset - limit,
             nextOffset = Math.min(thisOffset, (totalPage - 1) * limit),
             lastOffset = (totalPage - 1) * limit;
 
         self.response.setContentType('application/json');
-    
+
         var links = [];
         if ('true' != suppressPaginationLink) {
             links.push(self._createLink(limit, 0, 'first'));
@@ -474,7 +517,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
             // append to header
             self.response.setHeader("Link", links.join(','));
         }
-    
+
         self.response.setStatus(200);
 
         // get the writer
@@ -495,7 +538,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
             } else {
                 append = true;
             }
-        
+
             var out = {};
             fields.forEach(function (fieldName) {
                 fieldName = fieldName.trim();
@@ -512,7 +555,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
                     value = null;
                 } else
                 */
-                
+
                 if (ed.isBoolean()) {
                     value = JSUtil.toBoolean(element.toString());
                 } else if (ed.isTrulyNumber()) {
@@ -533,12 +576,12 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
                 }
             });
             writer.writeString(JSON.stringify(out));
-        
+
         }
         if (!singleObject) {
             writer.writeString(']');
         }
-    
+
         if (self.getQueryParam('sysparm_meta', false)) {
             // append meta information
             var meta = {
@@ -564,7 +607,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
 
         // close the result
         writer.writeString('}');
-        
+
     },
 
 
