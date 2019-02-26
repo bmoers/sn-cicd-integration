@@ -63,7 +63,11 @@ CiCdWebHook.prototype = /** @lends global.module:sys_script_include.CiCdWebHook.
         self.response = response;
 
         self.proxyEnabled = Boolean(gs.getProperty('cicd-integration.pull-request-proxy.enabled', 'false') == 'true');
-        self.proxyURL = gs.getProperty('cicd-integration.pull-request-proxy.url', null);
+
+        var cicdServerMatch = gs.getProperty('cicd-integration.server.url', '').match(/((?:http[s]?:\/\/)[^\/]*)/i);
+        var cicdServer = (cicdServerMatch) ? cicdServerMatch[1] : 'server-undefined';
+
+        self.proxyURL = cicdServer.concat('/pull_request');
         self.secretName = gs.getProperty('cicd-integration.pull-request-proxy.header-secret-name', null);
         self.secretToken = gs.getProperty('cicd-integration.pull-request-proxy.secret', null);
         self.secretValidation = gs.getProperty('cicd-integration.pull-request-proxy.secret-validation', null);
