@@ -1,4 +1,3 @@
-
 /**
  * Helper Class to control visibility of UI action
  * 
@@ -26,16 +25,7 @@ CiCdJsDoc.prototype = /** @lends global.module:sys_script_include.CiCdJsDoc.prot
         if (gs.nil(current) || !current.canWrite())
             return false;
 
-        if (!GlideProperties.getBoolean('cicd-integration.jsdocButton.enabled', false))
-            return false;
-
-        // dont show the jsDoc button if record is readonly or protected
-        if (current.isValidField('sys_policy')) {
-            if (['read', 'protected'].indexOf(current.getValue('sys_policy')) !== -1) {
-                return false;
-            }
-        }
-        return true;
+        return (gs.getProperty('cicd-integration.jsdocButton.enabled', 'false') == 'true');
     },
 
     type: 'CiCdJsDoc'
