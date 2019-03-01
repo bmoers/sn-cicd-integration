@@ -105,6 +105,12 @@ CiCdDeploy.prototype = {
         return out;
     },
 
+    getBaseURI: function () {
+        var self = this;
+        // get base uri out of '/api/devops/v101/cicd/pull' or '/api/devops/cicd/pull'
+        var tmp = self.request.uri.split('/');
+        return tmp.slice(0, (/^v\d+$/m.test(tmp[3]) ? 5 : 4)).join('/')
+    },
 
     /**
      * Source API. <br>This is the entry point to trigger a deployment on a target env.
@@ -127,7 +133,7 @@ CiCdDeploy.prototype = {
     deployUpdateSet: function () {
         var self = this;
         var userSysId,
-            roleSysId, updateSetSysId, sourceEnvironment, targetEnvironment,
+            roleSysId, updateSetSysId, sourceEnvironment, targetEnvironment, limitSet = [],
             sourceUserName, sourcePassword,
             targetUserName, targetPassword;
 
@@ -175,11 +181,28 @@ CiCdDeploy.prototype = {
             }
 
             var us = new GlideRecord('sys_update_set');
-            if (us.get(updateSetSysId)) {
-                if (us.getValue('state') != 'complete') {
-                    throw Error('UpdateSet is Not in complete state');
+            if (!us.get(updateSetSysId)) 
+                throw Error('UpdateSet not found');
+            
+            if (us.getValue('state') != 'complete') {
+                throw Error('UpdateSet is Not in complete state');
+            }
+            
+            if (us.base_update_set.nil()) {
+                limitSet.push(updateSetSysId);
+            } else {
+                var baseSysId = us.getValue('base_update_set');
+                if (updateSetSysId != baseSysId)
+                    throw Error('This update-set is member of a batch. Parent must be deployed: ' + baseSysId);
+                
+                var bus = new GlideRecord('sys_update_set');
+                bus.addQuery('base_update_set', updateSetSysId);
+                bus._query();
+                while (bus._next()) {
+                    limitSet.push(bus.getValue('sys_id'));
                 }
             }
+            
 
             if (!sourceUserName || !sourcePassword) {
                 
@@ -224,9 +247,11 @@ CiCdDeploy.prototype = {
             }
 
             // call target instance to load the update set
-            var endpoint = targetEnvironment.concat('/api/devops/v1/cicd/pull'), // pullUpdateSet()
+            
+            var endpoint = targetEnvironment.concat(self.getBaseURI(), '/pull'), // pullUpdateSet()
                 requestBody = {
                     updateSetSysId: updateSetSysId,
+                    limitSet: limitSet.join(','),
                     sourceEnvironment: sourceEnvironment,
                     credentials: {
                         user: sourceUserName,
@@ -236,15 +261,7 @@ CiCdDeploy.prototype = {
             
             var request = new sn_ws.RESTMessageV2();
             request.setEndpoint(endpoint);
-            /*
-                I thinks it's simpler to only have the CD credentials on the CICD server 
-                and not also in ServiceNow.
-                
-            var basicAuthProfile = self.getBasicAuthProfile(targetEnvironment, true);
-            if (basicAuthProfile) {
-                request.setAuthenticationProfile('basic', basicAuthProfile);
-            } else
-            */
+            
             if (targetUserName && targetPassword) {
                 request.setBasicAuth(targetUserName, targetPassword);
             } else {
@@ -317,13 +334,15 @@ CiCdDeploy.prototype = {
                 prev[key] = self.getQueryParam(key);
                 return prev;
             }, {});
-            var progressId = payload.progressId;
-
+            
+            //var payload = JSON.parse(decodeURIComponent(self.getQueryParam('p')));
+            
             if (!Object.keys(payload))
                 throw Error('processUpdateSetDeploySteps: no request payload found');
 
+            var progressId = payload.progressId;
+            
             if (payload.targetEnvironment == gs.getProperty('glide.servlet.uri').toLowerCase()) {
-
 
                 if (!gs.nil(progressId)) {
                     var pgr = new GlideRecord('sys_execution_tracker');
@@ -331,10 +350,10 @@ CiCdDeploy.prototype = {
                         throw Error('no tracker found with that ID: '.concat(progressId));
                     } else {
                         var state = parseInt(pgr.getValue('state'), 10);
-                        if (state == 4) { // Cancelled
+                        if (state == 4) // Cancelled
                             throw Error('Execution Tracker cancelled: '.concat(pgr.getLink()));
 
-                        } else if (state != 2) {
+                        if (parseInt(pgr.getValue('percent_complete'), 10) != 100) {
                             /*
                             job still in progress, return not modified 304 and url to this resource.
                             */
@@ -343,7 +362,7 @@ CiCdDeploy.prototype = {
                     }
                 }
 
-                // here state must be 2 (successful) or no tracker in place
+                // here 'percent_complete' must be 100 (%) or no tracker in place
                 switch (payload.step) {
                     case 'loadUpdateSet':
                         return self._targetLoadUpdateSet(payload);
@@ -377,41 +396,50 @@ CiCdDeploy.prototype = {
         var self = this;
 
         var sourceSysId = payload.sourceSysId,
-            updateSetSysId = payload.updateSetSysId;
+            limitSet = (payload.limitSet || '').split(',');
+        
         /*
             if this update set was already loaded, delete it.
         */
-        var rus = new GlideRecord('sys_remote_update_set');
-        if (rus.get('remote_sys_id', updateSetSysId)) {
-            gs.info("deleting already loaded update set {0}", updateSetSysId);
+        limitSet.forEach(function (updateSetSysId) {
+            var rus = new GlideRecord('sys_remote_update_set');
+            rus.addQuery('remote_sys_id', updateSetSysId);
+            rus._query();
+            while (rus._next()) {
+                
+                var lus = new GlideRecord('sys_update_set');
+                lus.addQuery('sys_id', rus.getValue('update_set'));
+                /*
+                    only delete if it was not changed (opened) on the target system since last deployment
+                */
+                lus.addQuery('sys_mod_count', '<=', 2);
+                lus.addQuery('state', 'complete');
+                lus._query();
+                if (lus._next()) {
+                    gs.info("[CICD] : deleting local update-set '{0}'", lus.getValue('sys_id'));
+                    lus.deleteRecord();
+                } else {
+                    gs.info("[CICD] : local update-set '{0}' was modified since deployment and will not be deleted.", lus.getValue('sys_id'));
+                }
 
-            var lus = new GlideRecord('sys_update_set');
-            lus.addQuery('sys_id', rus.getValue('update_set'));
-            /*
-                only delete if it was not changed (opened) on the target system since last deployment
-            */
-            lus.addQuery('sys_mod_count', 2);
-            lus._query();
-            if (lus._next()) {
-                lus.deleteRecord();
+                gs.info("[CICD] : deleting already loaded update-set '{0}'", updateSetSysId);
+                // delete the remote update set
+                rus.deleteRecord();
             }
-
-            // delete the remote update set
-            rus.deleteRecord();
-        }
+        });
+        
 
         /*
             run worker to load the update set from remote
         */
         var worker = new GlideUpdateSetWorker();
         worker.setUpdateSourceSysId(sourceSysId); // the sys_update_set_source sys_id
-        worker.setLimitSet(updateSetSysId); // the update-set sys_id 
+        worker.setLimitSet(limitSet); // the update-set sys_id's
         worker.setBackground(true);
         worker.start();
         var progress_id = worker.getProgressID();
 
-
-        gs.info("GlideUpdateSetWorker completed progress_id: {0}", progress_id);
+        //gs.info("GlideUpdateSetWorker progress_id: '{0}'", progress_id.toString());
 
         self.assign(payload, {
             progressId: progress_id,
@@ -517,7 +545,7 @@ CiCdDeploy.prototype = {
             gs.info("UpdateSetPreviewer completed progress_id: {0}", progress_id);
 
             self.assign(payload, {
-                state: state,
+                state: "previewing",
                 progressId: progress_id,
                 remoteUpdateSetSysId: remoteUpdateSetSysId,
                 step: 'commitUpdateSet'
@@ -527,7 +555,7 @@ CiCdDeploy.prototype = {
             return self._sendLocation(202, payload);
         }
 
-        return false;
+        throw Error('Remote update-set not found with "remote_sys_id" ' + updateSetSysId);
     },
 
 
@@ -535,15 +563,15 @@ CiCdDeploy.prototype = {
         var self = this;
         try {
             try {
-
                 /*
                     problem check could also be done with:
                     GlidePreviewProblemHandler.hasUnresolvedProblems('sys_remote_update_set_SYS_ID')
 
                 */
                 var problem = new GlideRecord('sys_update_preview_problem');
-                problem.addQuery('remote_update_set='.concat(payload.remoteUpdateSetSysId, '^type=error^status='));
+                problem.addQuery('type=error^status=^'.concat('remote_update_set=', payload.remoteUpdateSetSysId, '^ORremote_update_set.remote_base_update_set=', payload.remoteUpdateSetSysId));
                 problem._query();
+                //gs.info("[CICD] : problem lookup query"+ problem.getEncodedQuery())
                 var issues = [];
                 while (problem._next()) {
                     issues.push({
@@ -564,15 +592,15 @@ CiCdDeploy.prototype = {
                         status: 'failure'
                     };
                 }
-
-                var query = 'remote_update_set='.concat(payload.remoteUpdateSetSysId, '^action=DELETE^nameDOES NOT CONTAINsys_dictionary_override^nameSTARTSWITHsys_dictionary^ORnameSTARTSWITHsys_db_object^ORnameSTARTSWITHvar_dictionary^ORnameSTARTSWITHsvc_extension_variable^ORnameSTARTSWITHwf_activity_variable^ORnameSTARTSWITHatf_input_variable^ORnameSTARTSWITHatf_output_variable^ORnameSTARTSWITHsys_atf_variable^ORnameSTARTSWITHsys_atf_remembered_values^ORDERBYtype^ORDERBYname');
-                var gr = new GlideRecord('sys_update_xml');
-                gr.addQuery(query);
-                gr._query();
-                while (gr._next()) {
+                
+                var del = new GlideRecord('sys_update_xml');
+                del.addQuery('action=DELETE^'.concat('remote_update_set=', payload.remoteUpdateSetSysId, '^ORremote_update_set.remote_base_update_set=', payload.remoteUpdateSetSysId, '^nameDOES NOT CONTAINsys_dictionary_override^nameSTARTSWITHsys_dictionary^ORnameSTARTSWITHsys_db_object^ORnameSTARTSWITHvar_dictionary^ORnameSTARTSWITHsvc_extension_variable^ORnameSTARTSWITHwf_activity_variable^ORnameSTARTSWITHatf_input_variable^ORnameSTARTSWITHatf_output_variable^ORnameSTARTSWITHsys_atf_variable^ORnameSTARTSWITHsys_atf_remembered_values^ORDERBYtype^ORDERBYname'));
+                //gs.info("[CICD] : problem lookup query" + del.getEncodedQuery())
+                del._query();
+                while (del._next()) {
                     issues.push({
-                        type: gr.getValue('type'),
-                        name: gr.getValue('name')
+                        type: del.getValue('type'),
+                        name: del.getValue('name')
                     });
                 }
                 if (issues.length) {
@@ -581,7 +609,7 @@ CiCdDeploy.prototype = {
                         error: {
                             name: 'Data Loss Warning',
                             message: 'If you commit this update set, the system will automatically delete all data stored in the tables and columns that are defined in these Customer Updates',
-                            updateSet: gs.getProperty('glide.servlet.uri').concat(problem.getElement('remote_update_set').getRefRecord().getLink(true)),
+                            updateSet: gs.getProperty('glide.servlet.uri').concat('sys_remote_update_set.do?sys_id=', payload.remoteUpdateSetSysId),
                             warnings: issues
                         },
                         status: 'failure'
@@ -592,26 +620,43 @@ CiCdDeploy.prototype = {
                 return self.response.setBody(error); //self.response.setError()
             }
 
-            /*
-                Commit the update set.
-                code from /sys_script_include.do ? sys_id = d14a6c27eff22000c6845a3615c0fb5d
-            */
-            var commitResult = new UpdateSetCommitAjax((function () {
-                var params = {
-                    sysparm_type: 'commitRemoteUpdateSet',
-                    sysparm_remote_updateset_sys_id: payload.remoteUpdateSetSysId
-                };
-                return {
-                    getParameter: function (paramName) {
-                        return params[paramName];
-                    }
-                };
-            })(), new GlideXMLDocument(), '').process();
-            var progress_id = commitResult.split(',')[0];
-
-            //var worker = new SNC.HierarchyUpdateSetScriptable();
-            //var progress_id = worker.commitHierarchy(payload.remoteUpdateSetSysId);
-
+            var rus = new GlideRecord('sys_remote_update_set');
+            if (rus.get(payload.remoteUpdateSetSysId)) { 
+                if (rus.remote_base_update_set.nil()) { 
+                    /*
+                        Commit the update set.
+                        code from /sys_ui_action.do?sys_id=c38b2cab0a0a0b5000470398d9e60c36 
+                        calling /sys_script_include.do?sys_id=d14a6c27eff22000c6845a3615c0fb5d
+                    */
+                    var commitResult = new UpdateSetCommitAjax((function () {
+                        var params = {
+                            sysparm_type: 'commitRemoteUpdateSet',
+                            sysparm_remote_updateset_sys_id: payload.remoteUpdateSetSysId
+                        };
+                        return {
+                            getParameter: function (paramName) {
+                                return params[paramName];
+                            }
+                        };
+                    })(), new GlideXMLDocument(), '').process();
+                    var progress_id = commitResult.split(',')[0];
+                } else {
+                    /*
+                        HierarchyUpdateSetCommitAjax
+                        code from /sys_ui_action.do?sys_id=addc9e275bb01200abe48d5511f91a78
+                        calling /sys_script_include.do?sys_id=fcfc9e275bb01200abe48d5511f91aea
+                    */
+                    var updateSet = new GlideRecord("sys_remote_update_set");
+                    if (updateSet.get(rus.remote_base_update_set)) {
+                        var worker = new SNC.HierarchyUpdateSetScriptable();
+                        var progress_id = worker.commitHierarchy(updateSet.sys_id);
+                    } else {
+                        throw Error("Batch-UpdateSet not found for update-set with id" + payload.remoteUpdateSetSysId);
+                    }                    
+                }
+            } else {
+                throw Error("UpdateSet not found with id" + payload.remoteUpdateSetSysId);
+            }
 
             self.assign(payload, {
                 state: 'committing',
@@ -620,12 +665,7 @@ CiCdDeploy.prototype = {
             });
 
             return self._sendLocation(202, payload); // job create, return 'accepted'
-            /*
-            self.response.setStatus(202);
-            self.response.setHeader("Location",
-                '/api/devops/v1/cicd/queue?trackerId='.concat(trackerId, '&payload=', encodeURIComponent(JSON.stringify(payload)))
-            );
-            */
+            
         } catch (e) {
             gs.error(e.message);
             return new sn_ws_err.BadRequestError(e.message);
@@ -647,13 +687,14 @@ CiCdDeploy.prototype = {
 
     _sendLocation: function (status, payload, host) {
         var self = this;
+        
         var queryParams = Object.keys(payload).map(function (key) {
             return key.concat('=', encodeURIComponent(payload[key]));
         });
 
         self.response.setStatus(status);
         self.response.setHeader("Location",
-            (host || gs.getProperty('glide.servlet.uri').toLowerCase()).concat('/api/devops/v1/cicd/deploy?', queryParams.join('&'))
+            (host || gs.getProperty('glide.servlet.uri').toLowerCase()).concat(self.getBaseURI(), '/deploy?', queryParams.join('&'))
         );
         return;
     },
@@ -667,7 +708,7 @@ CiCdDeploy.prototype = {
      */
     pullUpdateSet: function () {
         var self = this,
-            sourceSysId, sourceEnvironment, updateSetSysId;
+            sourceSysId, sourceEnvironment, updateSetSysId, limitSet;
 
         try {
             if (!self.body) {
@@ -679,6 +720,7 @@ CiCdDeploy.prototype = {
             }
 
             updateSetSysId = self.body.updateSetSysId;
+            limitSet = self.body.limitSet;
 
             /*
                 create a dynamic source definition
@@ -719,7 +761,7 @@ CiCdDeploy.prototype = {
                 if (gs.nil(sourceSysId))
                     throw Error('Somethings wrong with the creation of sys_update_set_source. CD User must have admin grants.');
 
-                gs.info("sys_update_set_source {0}", sourceSysId);
+                gs.info("[CICD] : pullUpdateSet() sys_update_set_source {0}", sourceSysId);
 
             } catch (e) {
                 // remove the record completely 
@@ -738,6 +780,7 @@ CiCdDeploy.prototype = {
                 targetEnvironment: gs.getProperty('glide.servlet.uri').toLowerCase(),
                 sourceSysId: sourceSysId,
                 updateSetSysId: updateSetSysId,
+                limitSet: limitSet,
                 step: 'loadUpdateSet'
             };
 
@@ -768,33 +811,6 @@ CiCdDeploy.prototype = {
         if (!gs.nil(userSysId) && user.get(userSysId)) {
             user.deleteRecord();
         }
-    },
-
-    /**
-     * Get Oauth bearer from DB
-     * 
-     * @returns {any} token
-     */
-    getBasicAuthProfile: function (targetEnvironment, exactMatch) {
-        var self = this;
-
-        var regex = /(?:http[s]?:\/\/)([^:\/]*)/; // get 'instance.service-now.com' out of 'https://instance.service-now.com/'
-
-        if (!targetEnvironment)
-            throw Error('Target Environment not specified');
-
-        var match = targetEnvironment.match(regex);
-        if (match) {
-            var targetHost = match[1];
-
-            var gr = new GlideRecord('sys_auth_profile_basic');
-            if (gr.get('name', 'CICD-deploy-'.concat(targetHost))) {
-                return gr.getValue('sys_id');
-            } else if (!exactMatch && gr.get('name', 'CICD-deploy--default--')) {
-                return gr.getValue('sys_id');
-            }
-        }
-        return null;
     },
 
     type: 'CiCdDeploy'

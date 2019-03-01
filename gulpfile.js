@@ -61,7 +61,11 @@ gulp.task('update-set', function () {
     return gulp.src('original/sys_remote_update_set_*.xml')
         .pipe(replace(new RegExp(process.env.REPLACE_COMPANY, 'ig'), 'company'))
         .pipe(replace(`<namespace>${process.env.REPLACE_NAMESPACE || 'devops'}</namespace>`, '<namespace>devops</namespace>'))
+        .pipe(replace(`<value>${process.env.REPLACE_SECRET}</value>`, '<value>5VCSj9SPRH3EbNHrBSTf</value>'))
         .pipe(replace(`/${process.env.REPLACE_NAMESPACE}/`, '/devops/'))
+        .pipe(replace(/<(u_[^\/>]*)\/>/g, ''))
+        .pipe(replace(/<(u_[^\s\/>]*)[^>]*>.*<\/(\1)>/g, ''))
+        
         .pipe(replace(new RegExp(process.env.USERNAME, 'ig'), 'b.moers'))
         .pipe(rename({
             basename: "CICD Integration"
