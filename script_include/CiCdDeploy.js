@@ -174,7 +174,7 @@ CiCdDeploy.prototype = {
             sourceEnvironment = gs.getProperty('glide.servlet.uri').toLowerCase(); // the current instance
             gitDeployment = !gs.nil(self.body.commitId);
             deploy = self.body.deploy;
-            sourceUrl = gitDeployment ? sourceEnvironment.concat('api/devops/cicd/source/') : sourceEnvironment;
+            sourceUrl = gitDeployment ? sourceEnvironment.concat(sourceEnvironment.endsWith('/') ? '' : '/', 'api/devops/cicd/source/') : sourceEnvironment;
 
             targetEnvironment = self.body.targetEnvironment.host.toLowerCase();
             targetUserName = self.body.targetEnvironment.username;
@@ -192,10 +192,10 @@ CiCdDeploy.prototype = {
                 throw Error('invalid host');
 
             var sourceMatch = sourceEnvironment.match(/(?:http[s]?:\/\/)([^\.]*)([^:\/]*)/i);
-            if (!sourceMatch || !sourceMatch[1])
+            if (!sourceMatch || !targetMatch[1])
                 throw Error('invalid host');
 
-            if (sourceMatch[1] == sourceMatch[1])
+            if (sourceMatch[1] == targetMatch[1])
                 throw Error('source and target can not be same');
 
 
@@ -309,8 +309,7 @@ CiCdDeploy.prototype = {
             }
 
             // call target instance to load the update set
-
-            var endpoint = targetEnvironment.concat(self.getBaseURI(), '/pull'), // pullUpdateSet()
+            var endpoint = targetEnvironment.concat(targetEnvironment.endsWith('/') ? '' : '/', 'api/devops/cicd/pull'), // pullUpdateSet()
                 requestBody = {
                     updateSetSysId: updateSetSysId,
                     limitSet: limitSet.join(','), // <-- this are actually the US to be deployed
@@ -685,6 +684,7 @@ CiCdDeploy.prototype = {
             }
 
             // only commit if 'deploy' is set
+            var progress_id = null;
             if (payload.deploy) {
                 var rus = new GlideRecord('sys_remote_update_set');
                 if (rus.get(payload.remoteUpdateSetSysId)) {
@@ -705,7 +705,7 @@ CiCdDeploy.prototype = {
                                 }
                             };
                         })(), new GlideXMLDocument(), '').process();
-                        var progress_id = commitResult.split(',')[0];
+                        progress_id = commitResult.split(',')[0];
                     } else {
                         /*
                             HierarchyUpdateSetCommitAjax
@@ -715,7 +715,7 @@ CiCdDeploy.prototype = {
                         var updateSet = new GlideRecord("sys_remote_update_set");
                         if (updateSet.get(rus.remote_base_update_set)) {
                             var worker = new SNC.HierarchyUpdateSetScriptable();
-                            var progress_id = worker.commitHierarchy(updateSet.sys_id);
+                            progress_id = worker.commitHierarchy(updateSet.sys_id);
                         } else {
                             throw Error("Batch-UpdateSet not found for update-set with id" + payload.remoteUpdateSetSysId);
                         }
@@ -759,9 +759,11 @@ CiCdDeploy.prototype = {
             return key.concat('=', encodeURIComponent(payload[key]));
         });
 
+        var uri = (host || gs.getProperty('glide.servlet.uri')).toLowerCase();
+
         self.response.setStatus(status);
         self.response.setHeader("Location",
-            (host || gs.getProperty('glide.servlet.uri').toLowerCase()).concat(self.getBaseURI(), '/deploy?', queryParams.join('&'))
+            uri.concat(uri.endsWith('/') ? '' : '/', 'api/devops/cicd/deploy?', queryParams.join('&'))
         );
         return;
     },
@@ -775,7 +777,7 @@ CiCdDeploy.prototype = {
      */
     pullUpdateSet: function () {
         var self = this,
-            sourceSysId, sourceEnvironment, sourceUrl, updateSetSysId, limitSet;
+            sourceSysId, sourceEnvironment, sourceUrl, updateSetSysId, limitSet, deploy;
 
         try {
             if (!self.body) {
@@ -797,8 +799,9 @@ CiCdDeploy.prototype = {
                 sourceEnvironment = self.body.sourceEnvironment.toLowerCase();
                 updateSetSysId = self.body.updateSetSysId;
                 limitSet = self.body.limitSet;
-                sourceUrl = self.body.sourceUrl || sourceEnvironment;
+                sourceUrl = (self.body.sourceUrl || sourceEnvironment).trim();
                 gitDeployment = self.body.gitDeployment || false;
+                deploy = self.body.deploy || false;
 
                 var source = new GlideRecord('sys_update_set_source'),
                     name = new GlideChecksum(sourceUrl).getMD5().substr(0, 40),
@@ -824,6 +827,7 @@ CiCdDeploy.prototype = {
                     source.setValue('short_description', desc);
                     source.setValue('type', (gitDeployment) ? 'GIT' : 'dev');
                     source.setValue('active', true);
+                    source.setWorkflow(false);
                     sourceSysId = source.insert();
                 }
                 if (gs.nil(sourceSysId))
@@ -849,6 +853,7 @@ CiCdDeploy.prototype = {
                 sourceSysId: sourceSysId,
                 updateSetSysId: updateSetSysId,
                 limitSet: limitSet,
+                deploy: deploy,
                 step: 'loadUpdateSet'
             };
 
