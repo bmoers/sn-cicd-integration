@@ -736,7 +736,8 @@ CiCdDeploy.prototype = {
                     name = new GlideChecksum(sourceEnvironment).getMD5().substr(0, 40),
                     desc = 'CICD deployment source for '.concat(sourceEnvironment, '. DO NOT DELETE OR CHANGE!');
 
-                if (source.get('url', sourceEnvironment)) {
+                var noSlashUrl = sourceEnvironment.trim().replace(/\/$/,"");
+                if (source.get('url', noSlashUrl) || source.get('url', noSlashUrl + '/')) {
                     sourceSysId = source.getValue('sys_id');
                 } else {
                     var credentials = self.body.credentials || {};
