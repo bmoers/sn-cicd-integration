@@ -93,14 +93,18 @@ CiCdDeploy.prototype = {
                 return value;
             }
         })() : defaultValue;
-
+        var outL = out.toLowerCase();
         if (out === undefined)
             return out;
 
         if (!isNaN(out))
             return parseInt(out, 10);
-        if ('null' == out.toLowerCase())
+        if ('null' == outL)
             return null;
+        if ('true' == outL)
+            return true;
+        if ('false' == outL)
+            return false;
 
         return out;
     },
@@ -200,7 +204,7 @@ CiCdDeploy.prototype = {
 
 
             if (gitDeployment) { // git 2 snow deployment
-                updateSetSysId = commitId;
+                updateSetSysId = commitId.substr(0, 32);
                 limitSet.push(commitId);
 
             } else { // for snow 2 snow deployment, check us state etc
@@ -312,7 +316,7 @@ CiCdDeploy.prototype = {
             var endpoint = targetEnvironment.concat(targetEnvironment.endsWith('/') ? '' : '/', 'api/devops/cicd/pull'), // pullUpdateSet()
                 requestBody = {
                     updateSetSysId: updateSetSysId,
-                    limitSet: limitSet.join(','), // <-- this are actually the US to be deployed
+                    limitSet: limitSet.join(','), // <-- these are actually the US to be deployed
                     sourceEnvironment: sourceEnvironment,
                     gitDeployment: gitDeployment,
                     deploy: deploy,
@@ -523,7 +527,7 @@ CiCdDeploy.prototype = {
             manually run the preview.
         */
         var rus = new GlideRecord('sys_remote_update_set');
-        rus.addQuery('remote_sys_id', updateSetSysId);
+        rus.addQuery('remote_sys_id', 'STARTSWITH', updateSetSysId);
         //rus.addQuery('state', '!=', 'previewed');
         rus._query();
         if (rus._next()) {
@@ -544,7 +548,7 @@ CiCdDeploy.prototype = {
 
             /*
                 run the preview 
-                code from /sys_script_include.do ? sys_id = 02 ba7cd747103200a03a19fbac9a71bc
+                code from /sys_script_include.do?sys_id=02ba7cd747103200a03a19fbac9a71bc
             */
             var progress_id = (function () {
                 if (rus.remote_base_update_set.nil()) {
@@ -648,7 +652,7 @@ CiCdDeploy.prototype = {
                         code: 409,
                         error: {
                             name: 'Update Set Preview Problems',
-                            message: 'Update collisions must be manually solved.',
+                            message: 'Update collisions must be resolved manually.',
                             updateSet: gs.getProperty('glide.servlet.uri').concat(problem.getElement('remote_update_set').getRefRecord().getLink(true)),
                             warnings: issues
                         },
@@ -837,6 +841,7 @@ CiCdDeploy.prototype = {
                 gs.info("[CICD] : pullUpdateSet() sys_update_set_source {0}", sourceSysId);
 
             } catch (e) {
+                gs.error("[CICD] : Source creation failed {0}", e.message || e)
                 // remove the record completely 
                 self.teardownTarget(sourceSysId);
 
