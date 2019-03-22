@@ -112,8 +112,9 @@ CiCdDeploy.prototype = {
     getBaseURI: function () {
         var self = this;
         // get base uri out of '/api/devops/v101/cicd/pull' or '/api/devops/cicd/pull'
-        var tmp = self.request.uri.split('/');
-        return tmp.slice(0, (/^v\d+$/m.test(tmp[3]) ? 5 : 4)).join('/')
+        var tmp = self.request.uri.replace(/(\/+)/g, "/").split('/');
+        tmp = tmp.slice(0, (/^v\d+$/m.test(tmp[3]) ? 5 : 4)).join('/');
+        return tmp.startsWith('/') ? tmp : '/'.concat(tmp);
     },
 
     /**
@@ -175,12 +176,12 @@ CiCdDeploy.prototype = {
 
             commitId = self.body.commitId;
             updateSetSysId = self.body.updateSetSysId; // request.updateSetId
-            sourceEnvironment = gs.getProperty('glide.servlet.uri').toLowerCase(); // the current instance
+            sourceEnvironment = gs.getProperty('glide.servlet.uri').toLowerCase().replace(/\/$/, ""); // the current instance
             gitDeployment = !gs.nil(self.body.commitId);
             deploy = self.body.deploy;
-            sourceUrl = gitDeployment ? sourceEnvironment.concat(sourceEnvironment.endsWith('/') ? '' : '/', 'api/devops/cicd/source/') : sourceEnvironment;
+            sourceUrl = gitDeployment ? sourceEnvironment.concat(self.getBaseURI(), '/source/') : sourceEnvironment;
 
-            targetEnvironment = self.body.targetEnvironment.host.toLowerCase();
+            targetEnvironment = self.body.targetEnvironment.host.toLowerCase().replace(/\/$/, "");
             targetUserName = self.body.targetEnvironment.username;
             targetPassword = self.body.targetEnvironment.password;
 
@@ -313,7 +314,7 @@ CiCdDeploy.prototype = {
             }
 
             // call target instance to load the update set
-            var endpoint = targetEnvironment.concat(targetEnvironment.endsWith('/') ? '' : '/', 'api/devops/cicd/pull'), // pullUpdateSet()
+            var endpoint = targetEnvironment.concat(self.getBaseURI(), '/pull'), // pullUpdateSet()
                 requestBody = {
                     updateSetSysId: updateSetSysId,
                     limitSet: limitSet.join(','), // <-- these are actually the US to be deployed
@@ -763,11 +764,11 @@ CiCdDeploy.prototype = {
             return key.concat('=', encodeURIComponent(payload[key]));
         });
 
-        var uri = (host || gs.getProperty('glide.servlet.uri')).toLowerCase();
+        var uri = (host || gs.getProperty('glide.servlet.uri')).toLowerCase().replace(/\/$/, "");
 
         self.response.setStatus(status);
         self.response.setHeader("Location",
-            uri.concat(uri.endsWith('/') ? '' : '/', 'api/devops/cicd/deploy?', queryParams.join('&'))
+            uri.concat(self.getBaseURI(), '/deploy?', queryParams.join('&'))
         );
         return;
     },
@@ -794,7 +795,7 @@ CiCdDeploy.prototype = {
             });
 
             if (!gs.getUser().getRoles().contains('admin'))
-                throw Error('CD User must have admin grants.');
+                throw Error('CD User must have admin grants. User: '.concat(gs.getUserName(), ' Roles', gs.getUser().getRoles().toString()));
             /*
                 create a dynamic source definition
             */
@@ -836,7 +837,7 @@ CiCdDeploy.prototype = {
                     sourceSysId = source.insert();
                 }
                 if (gs.nil(sourceSysId))
-                    throw Error('Somethings wrong with the creation of sys_update_set_source. CD User must have admin grants.');
+                    throw Error('Somethings wrong with the creation of sys_update_set_source. CD User must have admin grants. '.concat(gs.getUserName(), ' Roles', gs.getUser().getRoles().toString()));
 
                 gs.info("[CICD] : pullUpdateSet() sys_update_set_source {0}", sourceSysId);
 
