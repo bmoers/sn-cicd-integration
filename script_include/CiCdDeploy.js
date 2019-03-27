@@ -205,8 +205,8 @@ CiCdDeploy.prototype = {
 
 
             if (gitDeployment) { // git 2 snow deployment
-                updateSetSysId = commitId.substr(0, 32);
-                limitSet.push(commitId);
+                updateSetSysId = commitId.substr(0, 32); // make the commit ID as long as a sys_id
+                limitSet.push(updateSetSysId);
 
             } else { // for snow 2 snow deployment, check us state etc
                 var us = new GlideRecord('sys_update_set');
@@ -469,9 +469,9 @@ CiCdDeploy.prototype = {
         /*
             if this update set was already loaded, delete it.
         */
-        limitSet.forEach(function (updateSetSysId) {
+        limitSet.forEach(function (limitSetSysId) {
             var rus = new GlideRecord('sys_remote_update_set');
-            rus.addQuery('remote_sys_id', updateSetSysId);
+            rus.addQuery('remote_sys_id', 'STARTSWITH', limitSetSysId);
             rus._query();
             while (rus._next()) {
 
@@ -487,10 +487,10 @@ CiCdDeploy.prototype = {
                     gs.info("[CICD] : deleting local update-set '{0}'", lus.getValue('sys_id'));
                     lus.deleteRecord();
                 } else {
-                    gs.info("[CICD] : local update-set '{0}' was modified since deployment and will not be deleted.", lus.getValue('sys_id'));
+                    gs.info("[CICD] : local update-set '{0}' was modified since deployment and will not be deleted.", rus.getValue('update_set'));
                 }
 
-                gs.info("[CICD] : deleting already loaded update-set '{0}'", updateSetSysId);
+                gs.info("[CICD] : deleting already loaded 'sys_remote_update_set' '{0}'", limitSetSysId);
                 // delete the remote update set
                 rus.deleteRecord();
             }
