@@ -115,7 +115,7 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
                     name: current.getDisplayValue('application')  // the name of the application
                 },
                 git: {
-                    repository: current.getDisplayValue('application').toLowerCase().replace(/\s+/g, '_') // assuming the git repo shares the name with the scoped app
+                    repository: ((current.application.scope.toString() == 'global') ? current.getDisplayValue('application') : current.application.scope.toString()).toLowerCase().replace(/\s+/g, '_') // assuming the git repo shares the name with the scoped app
                 }
             });
         }
@@ -153,7 +153,7 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
                 name: current.getValue('name')              // the name of the application
             },
             git: {
-                repository: current.getValue('name').toLowerCase().replace(/\s+/g, '_') // assuming the git repo shares the name with the scoped app
+                repository: ((current.getValue('scope') == 'global') ? current.getValue('name') : current.getValue('scope')).toLowerCase().replace(/\s+/g, '_') // assuming the git repo shares the name with the scoped app
             }
         });
 
@@ -267,4 +267,5 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
         return name;
     },
 
+    type: 'CiCdRun'
 };
