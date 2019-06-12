@@ -233,7 +233,18 @@ CiCdDeploy.prototype = {
                 }
             }
 
+            // in GIT deployment mode, the user does not require to have the 'admin' role
+            var requiredUserRoles = (gitDeployment) ? ['soap_query', 'soap_script'] : ['admin'];
+            // get the sys_ids of the required roles
+            var adminRoles = [];
+            var roles = new GlideRecord('sys_user_role');
+            roles.addQuery('name', 'IN', requiredUserRoles);
+            roles._query();
+            while (roles._next()) {
+               adminRoles.push(roles.getValue('sys_id'));
+            }
 
+            
             if (!autoCreateCdUser) {
                 /*
                 // use user from request
@@ -249,27 +260,21 @@ CiCdDeploy.prototype = {
                 if (!sourceUserName || !sourcePassword)
                     throw Error('source credentials not specified');
 
-                // check if use has right roles
-                var adminRoles = [];
-                var adminRole = new GlideRecord('sys_user_role');
-                adminRole.addQuery('name', 'IN', ['admin', 'teamdev_user']);
-                adminRole._query();
-                while (adminRole._next()) {
-                    adminRoles.push(adminRole.getValue('sys_id'));
-                }
-
                 var user = new GlideRecord('sys_user');
                 if (!user.get('user_name', sourceUserName))
                     throw Error('source user not specified'); // same error as above to not expose user existence
 
+                userSysId = user.getValue('sys_id');
+
+                // check if use has right roles
                 var roleAssignment = new GlideRecord('sys_user_has_role');
-                roleAssignment.addQuery('user', user.getValue('sys_id'));
+                roleAssignment.addQuery('user', userSysId);
                 roleAssignment.addQuery('role', 'IN', adminRoles);
                 roleAssignment.addQuery('state', 'active');
                 roleAssignment._query();
                 if (!roleAssignment._next())
                     throw Error('source user has not the appropriate role');
-
+                
             } else {
 
                 // create user on source instance
@@ -298,19 +303,27 @@ CiCdDeploy.prototype = {
                     if (!userSysId)
                         throw Error('CICdDeploy: User not created. sys_update_set_source on \'' + targetEnvironment + '\' for host \'' + sourceEnvironment + '\' needs to be created manually');
 
-                    // assign teamdev_user or admin role (whatever exists first)
-                    var adminRole = new GlideRecord('sys_user_role');
-                    if (adminRole.get('name', 'teamdev_user') || adminRole.get('name', 'admin')) {
-                        var roleAssignment = new GlideRecord('sys_user_has_role');
+                }
+
+                if(adminRoles.length == 0)
+                    throw Error('CICdDeploy: admin role not found. ' + sourceUserName + ' will not have the correct grants to have this working');
+
+                // assign or update the correct role to the _CICD_DEPLOYMENT_ user
+                adminRoles.forEach(function(roleSysId){
+                    // check if use has right roles
+                    var roleAssignment = new GlideRecord('sys_user_has_role');
+                    roleAssignment.addQuery('user', userSysId);
+                    roleAssignment.addQuery('role', roleSysId);
+                    roleAssignment.addQuery('state', 'active');
+                    roleAssignment._query();
+                    if(!roleAssignment._next()){
                         roleAssignment.initialize();
                         roleAssignment.setValue('user', userSysId);
-                        roleAssignment.setValue('role', adminRole.getValue('sys_id'));
+                        roleAssignment.setValue('role', roleSysId);
                         roleAssignment.setValue('state', 'active');
                         roleSysId = roleAssignment.insert();
-                    } else {
-                        throw Error('CICdDeploy: admin role not found. ' + sourceUserName + ' will not have the correct grants to have this working');
-                    };
-                }
+                    }
+                });
             }
 
             // call target instance to load the update set
@@ -470,33 +483,41 @@ CiCdDeploy.prototype = {
             if this update set was already loaded, delete it.
         */
         limitSet.forEach(function (limitSetSysId) {
+            var lusSysId;
             var rus = new GlideRecord('sys_remote_update_set');
             rus.addQuery('remote_sys_id', 'STARTSWITH', limitSetSysId);
             rus._query();
-            while (rus._next()) {
-
-                var lus = new GlideRecord('sys_update_set');
-                lus.addQuery('sys_id', rus.getValue('update_set'));
-                /*
-                    only delete if it was not changed (opened) on the target system since last deployment
-                */
-                lus.addQuery('sys_mod_count', '<=', 2);
-                lus.addQuery('state', 'complete');
-                lus._query();
-                if (lus._next()) {
-                    gs.info("[CICD] : deleting local update-set '{0}'", lus.getValue('sys_id'));
-                    lus.deleteRecord();
-                } else {
-                    gs.info("[CICD] : local update-set '{0}' was modified since deployment and will not be deleted.", rus.getValue('update_set'));
-                }
-
-                gs.info("[CICD] : deleting already loaded 'sys_remote_update_set' '{0}'", limitSetSysId);
-                // delete the remote update set
-                rus.deleteRecord();
+            if (rus._next()) {
+                lusSysId = rus.getValue('update_set');
             }
+
+            var lus = new GlideRecord('sys_update_set');
+            if(lusSysId){
+                lus.addQuery('sys_id', lusSysId).addOrCondition('origin_sys_id', 'STARTSWITH', limitSetSysId);
+            } else {
+                lus.addQuery('origin_sys_id', 'STARTSWITH', limitSetSysId);
+            }
+            
+            /*
+                only delete if it was not changed (opened) on the target system since last deployment
+            */
+            lus.addQuery('sys_mod_count', '<=', 2);
+            lus.addQuery('state', 'complete');
+            lus._query();
+            if (lus._next()) {
+                gs.info("[CICD] : deleting local update-set '{0}'", lus.getValue('sys_id'));
+                lus.deleteRecord();
+            } else {
+                gs.info("[CICD] : local update-set '{0}' was modified since deployment and will not be deleted.", rus.getValue('update_set'));
+            }
+
+            gs.info("[CICD] : deleting already loaded 'sys_remote_update_set' '{0}'", limitSetSysId);
+            // delete the remote update set
+            rus.deleteRecord();
         });
 
-
+        gs.info("[CICD] : source {0}", sourceSysId);
+        gs.info("[CICD] : load update set {0}", limitSet);
         /*
             run worker to load the update set from remote
         */
@@ -507,7 +528,7 @@ CiCdDeploy.prototype = {
         worker.start();
         var progress_id = worker.getProgressID();
 
-        //gs.info("GlideUpdateSetWorker progress_id: '{0}'", progress_id.toString());
+        gs.info("[CICD] : GlideUpdateSetWorker progress_id: '{0}'", progress_id + '');
 
         self.assign(payload, {
             progressId: progress_id,
@@ -517,6 +538,7 @@ CiCdDeploy.prototype = {
         // job create, return 'accepted'
         return self._sendLocation(202, payload);
     },
+
 
     _targetPreviewUpdateSet: function (payload) {
         var self = this;
