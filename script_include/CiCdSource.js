@@ -188,6 +188,10 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
 
                 var head = self.assign({
                     application: null,
+                    application_name: null,
+                    application_scope: null,
+                    application_version: null,
+                    
                     base_update_set: null,
                     completed_by: null,
                     completed_on: null,
