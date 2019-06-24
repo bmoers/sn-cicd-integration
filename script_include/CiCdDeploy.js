@@ -241,10 +241,10 @@ CiCdDeploy.prototype = {
             roles.addQuery('name', 'IN', requiredUserRoles);
             roles._query();
             while (roles._next()) {
-               adminRoles.push(roles.getValue('sys_id'));
+                adminRoles.push(roles.getValue('sys_id'));
             }
 
-            
+
             if (!autoCreateCdUser) {
                 /*
                 // use user from request
@@ -274,19 +274,20 @@ CiCdDeploy.prototype = {
                 roleAssignment._query();
                 if (!roleAssignment._next())
                     throw Error('source user has not the appropriate role');
-                
+
             } else {
 
                 // create user on source instance
                 var userUniqueId = sourceUrl.concat(' to ', targetEnvironment);
                 var user = new GlideRecord('sys_user');
                 sourceUserName = '_CICD_DEPLOYMENT_'.concat(new GlideChecksum(userUniqueId).getMD5()).substr(0, 40);
+                var firstName = 'CD-User for '.concat((gitDeployment) ? 'GIT' : 'source', ' based deployments')
                 sourcePassword = null;
 
                 if (user.get('user_name', sourceUserName)) {
                     userSysId = user.getValue('sys_id');
                     if (user.getValue('last_name') !== userUniqueId) {
-                        user.setValue('first_name', 'CD-User for');
+                        user.setValue('first_name', firstName);
                         user.setValue('last_name', userUniqueId);
                         user.update();
                     }
@@ -297,7 +298,7 @@ CiCdDeploy.prototype = {
                     user.initialize();
                     user.setValue('user_name', sourceUserName);
                     user.setDisplayValue('user_password', sourcePassword);
-                    user.setValue('first_name', 'CD-User for');
+                    user.setValue('first_name', firstName);
                     user.setValue('last_name', userUniqueId);
                     userSysId = user.insert();
                     if (!userSysId)
@@ -305,23 +306,23 @@ CiCdDeploy.prototype = {
 
                 }
 
-                if(adminRoles.length == 0)
+                if (adminRoles.length == 0)
                     throw Error('CICdDeploy: admin role not found. ' + sourceUserName + ' will not have the correct grants to have this working');
 
                 // assign or update the correct role to the _CICD_DEPLOYMENT_ user
-                adminRoles.forEach(function(roleSysId){
+                adminRoles.forEach(function (roleSysId) {
                     // check if use has right roles
                     var roleAssignment = new GlideRecord('sys_user_has_role');
                     roleAssignment.addQuery('user', userSysId);
                     roleAssignment.addQuery('role', roleSysId);
                     roleAssignment.addQuery('state', 'active');
                     roleAssignment._query();
-                    if(!roleAssignment._next()){
+                    if (!roleAssignment._next()) {
                         roleAssignment.initialize();
                         roleAssignment.setValue('user', userSysId);
                         roleAssignment.setValue('role', roleSysId);
                         roleAssignment.setValue('state', 'active');
-                        roleSysId = roleAssignment.insert();
+                        roleAssignment.insert();
                     }
                 });
             }
@@ -492,12 +493,12 @@ CiCdDeploy.prototype = {
             }
 
             var lus = new GlideRecord('sys_update_set');
-            if(lusSysId){
+            if (lusSysId) {
                 lus.addQuery('sys_id', lusSysId).addOrCondition('origin_sys_id', 'STARTSWITH', limitSetSysId);
             } else {
                 lus.addQuery('origin_sys_id', 'STARTSWITH', limitSetSysId);
             }
-            
+
             /*
                 only delete if it was not changed (opened) on the target system since last deployment
             */
@@ -508,7 +509,8 @@ CiCdDeploy.prototype = {
                 gs.info("[CICD] : deleting local update-set '{0}'", lus.getValue('sys_id'));
                 lus.deleteRecord();
             } else {
-                gs.info("[CICD] : local update-set '{0}' was modified since deployment and will not be deleted.", rus.getValue('update_set'));
+                if (lusSysId)
+                    gs.info("[CICD] : local update-set '{0}' was modified since deployment and will not be deleted.", lusSysId);
             }
 
             gs.info("[CICD] : deleting already loaded 'sys_remote_update_set' '{0}'", limitSetSysId);
