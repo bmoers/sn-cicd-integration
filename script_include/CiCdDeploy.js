@@ -6,15 +6,27 @@
  * 
  * @class 
  * @author Boris Moers
- * @requires sn_ws_err.module:sys_script_include.BadRequestError
  * @requires sn_ws.module:sys_script_include.RESTMessageV2
+ * @requires sn_ws_err.module:sys_script_include.BadRequestError
+ * @requires global.module:sys_script_include.UpdateSetPreviewAjax
+ * @requires global.module:sys_script_include.HierarchyUpdateSetPreviewAjax
+ * @requires global.module:sys_script_include.UpdateSetCommitAjax
+ * @requires global.module:sys_script_include.SNC#HierarchyUpdateSetScriptable
+ * @requires sn_ws_err.module:sys_script_include.ServiceError
  * @memberof global.module:sys_script_include
  */
 var CiCdDeploy = Class.create();
 
-CiCdDeploy.prototype = {
+CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.prototype */ {
 
+    REQUIRES_REVIEW: 'conflict_review',//'Do Not Commit',
 
+    /**
+     * Polyfills for Object.assign
+     * 
+     * @param {any} target
+     * @returns {any} to
+     */
     assign: function (target) {
         if (target === null) { // TypeError if undefined or null
             throw new TypeError('Cannot convert undefined or null to object');
@@ -67,7 +79,7 @@ CiCdDeploy.prototype = {
      * 
      * @param {any} paramName
      * @param {any} defaultValue
-     * @returns {undefined}
+     * @returns {ConditionalExpression}
      */
     getPathParam: function (paramName, defaultValue) {
         var self = this;
@@ -80,7 +92,7 @@ CiCdDeploy.prototype = {
      * 
      * @param {any} paramName
      * @param {any} defaultValue
-     * @returns {undefined}
+     * @returns {any}
      */
     getQueryParam: function (paramName, defaultValue) {
         var self = this;
@@ -109,6 +121,11 @@ CiCdDeploy.prototype = {
         return out;
     },
 
+    /**
+     * Get base uri from current request uri
+     * 
+     * @returns {ConditionalExpression} 
+     */
     getBaseURI: function () {
         var self = this;
         // get base uri out of '/api/devops/v101/cicd/pull' or '/api/devops/cicd/pull'
@@ -120,17 +137,17 @@ CiCdDeploy.prototype = {
     /**
      * Source API. <br>This is the entry point to trigger a deployment on a target env.
      * takes updateSetSysId and targetEnvironment from payload body. <p>
-     *  It: 
-     *  <ul>
-     *  <li>can create a local admin user with a random password</li>
-     *  <li>sends a pull request for the update-set to the target containing
-     *  <ul><li>User Credentials (encrypted)</li><li>Update Set ID</li><li>Source environment</li>
-     *  </li>
-     *  <li>waits for the target instance to pull and check the update-set</li>
-     *  <li>returns the update-set status on the target env</li>
-     *  </ul>
+     * It:
+     * <ul>
+     * <li>can create a local admin user with a random password</li>
+     * <li>sends a pull request for the update-set to the target containing
+     * <ul><li>User Credentials (encrypted)</li><li>Update Set ID</li><li>Source environment</li>
+     * </li>
+     * <li>waits for the target instance to pull and check the update-set</li>
+     * <li>returns the update-set status on the target env</li>
+     * </ul>
      * </p>
-     *
+     * 
      * This is mapped to POST: /api/devops/v1/cicd/deploy
      * 
      * @returns {undefined}
@@ -142,13 +159,16 @@ CiCdDeploy.prototype = {
             sourceUserName, sourcePassword,
             targetUserName, targetPassword,
             autoCreateCdUser,
-            gitDeployment, sourceUrl, deploy;
+            gitDeployment, sourceUrl;
 
         try {
 
             /*
                 {
                     "updateSetSysId": "xxxxxxxxxxxxxxxxxxxxxxxx",
+                    "commitId": "xxxxxxxxxxxxxxxxxxxxxxx",
+                    "deploy" : true/false
+                    "collisionDetect" : true/false
                     "targetEnvironment": {
                         "host": "https://targethost.service-now.com",
                         "username": "",
@@ -178,7 +198,7 @@ CiCdDeploy.prototype = {
             updateSetSysId = self.body.updateSetSysId; // request.updateSetId
             sourceEnvironment = gs.getProperty('glide.servlet.uri').toLowerCase().replace(/\/$/, ""); // the current instance
             gitDeployment = !gs.nil(self.body.commitId);
-            deploy = self.body.deploy;
+
             sourceUrl = gitDeployment ? sourceEnvironment.concat(self.getBaseURI(), '/source/') : sourceEnvironment;
 
             targetEnvironment = self.body.targetEnvironment.host.toLowerCase().replace(/\/$/, "");
@@ -236,6 +256,12 @@ CiCdDeploy.prototype = {
             // in GIT deployment mode, the user does not require to have the 'admin' role
             var requiredUserRoles = (gitDeployment) ? ['soap_query', 'soap_script'] : ['admin'];
             // get the sys_ids of the required roles
+            var adminRole = '';
+            var role = new GlideRecord('sys_user_role');
+            if (role.get('name', 'admin')) {
+                adminRole = role.getValue('sys_id');
+            }
+
             var adminRoles = [];
             var roles = new GlideRecord('sys_user_role');
             roles.addQuery('name', 'IN', requiredUserRoles);
@@ -246,16 +272,6 @@ CiCdDeploy.prototype = {
 
 
             if (!autoCreateCdUser) {
-                /*
-                // use user from request
-                var auth = self.request.getHeader('authorization') || '';
-                var authOpt = auth.split(/\s/);
-                if (authOpt[0] && 'basic' == authOpt[0].toLowerCase()) {
-                    var credentials = ''.concat(new GlideStringUtil().base64Decode(authOpt[1])).split(/:(.+)/);
-                    sourceUserName = credentials[0];
-                    sourcePassword = credentials[1];
-                }
-                */
 
                 if (!sourceUserName || !sourcePassword)
                     throw Error('source credentials not specified');
@@ -269,7 +285,7 @@ CiCdDeploy.prototype = {
                 // check if use has right roles
                 var roleAssignment = new GlideRecord('sys_user_has_role');
                 roleAssignment.addQuery('user', userSysId);
-                roleAssignment.addQuery('role', 'IN', adminRoles);
+                roleAssignment.addQuery('role', 'IN', adminRoles).addOrCondition('role', adminRole);
                 roleAssignment.addQuery('state', 'active');
                 roleAssignment._query();
                 if (!roleAssignment._next())
@@ -330,12 +346,9 @@ CiCdDeploy.prototype = {
             // call target instance to load the update set
             var endpoint = targetEnvironment.concat(self.getBaseURI(), '/pull'), // pullUpdateSet()
                 requestBody = {
-                    updateSetSysId: updateSetSysId,
-                    limitSet: limitSet.join(','), // <-- these are actually the US to be deployed
                     sourceEnvironment: sourceEnvironment,
-                    gitDeployment: gitDeployment,
-                    deploy: deploy,
                     sourceUrl: sourceUrl,
+                    gitDeployment: gitDeployment,
                     credentials: {
                         user: sourceUserName,
                         password: (sourcePassword) ? new GlideEncrypter().encrypt(sourcePassword) : null
@@ -367,8 +380,22 @@ CiCdDeploy.prototype = {
                     - commitUpdateSet
                     - deploymentComplete
                 */
-                var responseBody = JSON.parse(response.getBody());
-                return self._sendLocation(303, responseBody.result, targetEnvironment); // see other
+                var responseBody = JSON.parse(response.getBody()).result;
+                var payload = {
+                    sourceSysId: responseBody.sourceSysId,
+                    targetEnvironment: responseBody.targetEnvironment,
+
+                    updateSetSysId: updateSetSysId,
+                    limitSet: limitSet.join(','), // <-- these are actually the US to be deployed
+
+                    sourceEnvironment: sourceEnvironment,
+                    deploy: Boolean(self.body.deploy),
+                    collisionDetect: Boolean(self.body.collisionDetect),
+                    conflicts: self.body.conflicts,
+                    step: 'loadUpdateSet'
+
+                };
+                return self._sendLocation(303, payload, targetEnvironment); // see other
             } else {
                 var statusCode = response.getStatusCode();
                 if (statusCode == 666) {
@@ -406,17 +433,22 @@ CiCdDeploy.prototype = {
 
 
     /**
-     * This is mapped to GET: /api/devops/v1/cicd/deploy
+     * This is mapped to POST: /api/devops/v1/cicd/deploy_step
+     * 
+     * @returns {undefined}
      */
     processUpdateSetDeploySteps: function () {
         var self = this;
 
         try {
+            /*
             var payload = Object.keys(self.request.queryParams).reduce(function (prev, key) {
                 prev[key] = self.getQueryParam(key);
                 return prev;
             }, {});
+            */
 
+            var payload = self.body;
             //var payload = JSON.parse(decodeURIComponent(self.getQueryParam('p')));
 
             if (!Object.keys(payload))
@@ -474,6 +506,12 @@ CiCdDeploy.prototype = {
     },
 
 
+    /**
+     * Load update set to target environment
+     * 
+     * @param {any} payload
+     * @returns {any} 
+     */
     _targetLoadUpdateSet: function (payload) {
         var self = this;
 
@@ -542,6 +580,12 @@ CiCdDeploy.prototype = {
     },
 
 
+    /**
+     * Preview update set on target environment
+     * 
+     * @param {any} payload
+     * @returns {undefined}
+     */
     _targetPreviewUpdateSet: function (payload) {
         var self = this;
 
@@ -651,70 +695,102 @@ CiCdDeploy.prototype = {
     },
 
 
+    /**
+     * Commit update set on target environment
+     * 
+     * @param {any} payload
+     * @returns {undefined}
+     */
     _targetCommitUpdateSet: function name(payload) {
         var self = this;
         try {
+
+            if (payload.collisionDetect) {
+                var rus = new GlideRecord('sys_remote_update_set');
+                if (rus.get(payload.remoteUpdateSetSysId)) {
+                    rus.setValue('state', self.REQUIRES_REVIEW);
+                    rus.setValue('name', '[CICD PREVIEW] - '.concat(rus.getValue('name')))
+                    rus.update();
+                }
+            }
+
             try {
                 /*
                     problem check could also be done with:
                     GlidePreviewProblemHandler.hasUnresolvedProblems('sys_remote_update_set_SYS_ID')
 
                 */
+                var e = {
+                    code: 409,
+                    error: {
+                        name: 'Preview Review Problem',
+                        message: '',
+                        updateSet: gs.getProperty('glide.servlet.uri').concat('sys_remote_update_set.do?sys_id=', payload.remoteUpdateSetSysId),
+                        issues: false,
+                        previewProblems: [],
+                        dataLossWarnings: []
+                    },
+                    status: 'failure'
+                };
+
                 var problem = new GlideRecord('sys_update_preview_problem');
                 problem.addQuery('type=error^status=^'.concat('remote_update_set=', payload.remoteUpdateSetSysId, '^ORremote_update_set.remote_base_update_set=', payload.remoteUpdateSetSysId));
                 problem._query();
                 //gs.info("[CICD] : problem lookup query"+ problem.getEncodedQuery())
-                var issues = [];
                 while (problem._next()) {
-                    issues.push({
+                    e.error.previewProblems.push({
                         type: problem.getValue('type'),
                         name: problem.getValue('description'),
                         link: gs.getProperty('glide.servlet.uri').concat(problem.getLink(true))
                     });
                 }
-                if (issues.length) {
-                    throw {
-                        code: 409,
-                        error: {
-                            name: 'Update Set Preview Problems',
-                            message: 'Update collisions must be resolved manually.',
-                            updateSet: gs.getProperty('glide.servlet.uri').concat(problem.getElement('remote_update_set').getRefRecord().getLink(true)),
-                            warnings: issues
-                        },
-                        status: 'failure'
-                    };
+                if (e.error.previewProblems.length) {
+                    e.error.issues = true;
+                    e.error.message += '- Update conflicts must be resolved manually. '
                 }
+
 
                 var del = new GlideRecord('sys_update_xml');
                 del.addQuery('action=DELETE^'.concat('remote_update_set=', payload.remoteUpdateSetSysId, '^ORremote_update_set.remote_base_update_set=', payload.remoteUpdateSetSysId, '^nameDOES NOT CONTAINsys_dictionary_override^nameSTARTSWITHsys_dictionary^ORnameSTARTSWITHsys_db_object^ORnameSTARTSWITHvar_dictionary^ORnameSTARTSWITHsvc_extension_variable^ORnameSTARTSWITHwf_activity_variable^ORnameSTARTSWITHatf_input_variable^ORnameSTARTSWITHatf_output_variable^ORnameSTARTSWITHsys_atf_variable^ORnameSTARTSWITHsys_atf_remembered_values^ORDERBYtype^ORDERBYname'));
                 //gs.info("[CICD] : problem lookup query" + del.getEncodedQuery())
                 del._query();
+
                 while (del._next()) {
-                    issues.push({
-                        type: del.getValue('type'),
-                        name: del.getValue('name')
+                    e.error.dataLossWarnings.push({
+                        type: del.getValue('name'),
+                        name: 'Data Loss Warning',
+                        link: gs.getProperty('glide.servlet.uri').concat(del.getLink(true))
                     });
                 }
-                if (issues.length) {
-                    throw {
-                        code: 409,
-                        error: {
-                            name: 'Data Loss Warning',
-                            message: 'If you commit this update set, the system will automatically delete all data stored in the tables and columns that are defined in these Customer Updates',
-                            updateSet: gs.getProperty('glide.servlet.uri').concat('sys_remote_update_set.do?sys_id=', payload.remoteUpdateSetSysId),
-                            warnings: issues
-                        },
-                        status: 'failure'
-                    }
+                if (e.error.dataLossWarnings.length) {
+                    e.error.issues = true;
+                    e.error.message += '- Data Loss Warnings'
                 }
-            } catch (error) {
-                self.response.setStatus(error.code);
-                return self.response.setBody(error); //self.response.setError()
+
+                if (e.error.issues)
+                    throw e;
+
+            } catch (e) {
+                self.response.setStatus(e.code);
+                // also send the payload back
+                e.error.payload = payload;
+                return self.response.setBody(e);
+            }
+
+
+
+            if (payload.collisionDetect) {
+                // if no collisions detected, remove the preview update set
+                var rus = new GlideRecord('sys_remote_update_set');
+                if (rus.get(payload.remoteUpdateSetSysId)) {
+                    rus.deleteRecord();
+                }
             }
 
             // only commit if 'deploy' is set
+
             var progress_id = null;
-            if (payload.deploy) {
+            if (!payload.collisionDetect && payload.deploy) {
                 var rus = new GlideRecord('sys_remote_update_set');
                 if (rus.get(payload.remoteUpdateSetSysId)) {
                     if (rus.remote_base_update_set.nil()) {
@@ -729,6 +805,12 @@ CiCdDeploy.prototype = {
                                 sysparm_remote_updateset_sys_id: payload.remoteUpdateSetSysId
                             };
                             return {
+                                /**
+                                 * Description
+                                 * 
+                                 * @param {any} paramName
+                                 * @returns {MemberExpression} 
+                                 */
                                 getParameter: function (paramName) {
                                     return params[paramName];
                                 }
@@ -769,32 +851,52 @@ CiCdDeploy.prototype = {
         }
     },
 
+    /**
+     * Return complete message
+     * 
+     * @param {any} payload
+     * @returns {any} payload
+     */
     _targetDeploymentComplete: function name(payload) {
         var self = this;
 
-        var us = new GlideRecord('sys_update_set');
-        if (us.get('remote_sys_id', payload.remoteUpdateSetSysId)) {
-            payload.targetUpdateSetSysId = us.getValue('sys_id');
-            payload.state = (payload.deploy) ? 'committed' : 'delivered';
+        if (payload.collisionDetect)
+            return payload;
+
+        payload.state = (payload.deploy) ? 'committed' : 'delivered';
+        if (payload.deploy) {
+            var us = new GlideRecord('sys_update_set');
+            if (us.get('remote_sys_id', payload.remoteUpdateSetSysId)) {
+                payload.targetUpdateSetSysId = us.getValue('sys_id');
+            }
         }
         return payload;
     },
 
 
+    /**
+     * Send redirect location (long polling)
+     * 
+     * @param {any} status
+     * @param {any} payload
+     * @param {any} host
+     * @returns {undefined}
+     */
     _sendLocation: function (status, payload, host) {
         var self = this;
-
+        /*
         var queryParams = Object.keys(payload).map(function (key) {
             return key.concat('=', encodeURIComponent(payload[key]));
         });
-
+        */
         var uri = (host || gs.getProperty('glide.servlet.uri')).toLowerCase().replace(/\/$/, "");
 
         self.response.setStatus(status);
         self.response.setHeader("Location",
-            uri.concat(self.getBaseURI(), '/deploy?', queryParams.join('&'))
+            uri.concat(self.getBaseURI(), '/deploy_step?__step=', payload.step, '&__status=', status)
+            //uri.concat(self.getBaseURI(), '/deploy?', queryParams.join('&'))
         );
-        return;
+        return self.response.setBody(payload);
     },
 
     /**
@@ -806,16 +908,16 @@ CiCdDeploy.prototype = {
      */
     pullUpdateSet: function () {
         var self = this,
-            sourceSysId, sourceEnvironment, sourceUrl, updateSetSysId, limitSet, deploy;
+            sourceSysId, sourceEnvironment, sourceUrl;//, updateSetSysId, limitSet, deploy, collisionDetect;
 
         try {
             if (!self.body) {
                 gs.error('no request payload found');
                 throw Error('pullUpdateSet: no request payload found');
             }
-            [self.body.updateSetSysId, self.body.sourceEnvironment, self.body.limitSet].forEach(function (param) {
+            [self.body.sourceEnvironment].forEach(function (param) {
                 if (gs.nil(param))
-                    throw Error('updateSetSysId, sourceEnvironment are mandatory');
+                    throw Error('sourceEnvironment are mandatory');
             });
 
             if (!gs.getUser().getRoles().contains('admin'))
@@ -826,11 +928,13 @@ CiCdDeploy.prototype = {
             try {
 
                 sourceEnvironment = self.body.sourceEnvironment.toLowerCase();
-                updateSetSysId = self.body.updateSetSysId;
-                limitSet = self.body.limitSet;
                 sourceUrl = (self.body.sourceUrl || sourceEnvironment).trim();
                 gitDeployment = self.body.gitDeployment || false;
-                deploy = self.body.deploy || false;
+
+                //updateSetSysId = self.body.updateSetSysId;
+                //limitSet = self.body.limitSet;
+                //deploy = self.body.deploy || false;
+                //collisionDetect = self.body.collisionDetect || false;
 
                 var source = new GlideRecord('sys_update_set_source'),
                     name = new GlideChecksum(sourceUrl).getMD5().substr(0, 40),
@@ -879,13 +983,8 @@ CiCdDeploy.prototype = {
             }
 
             var payload = {
-                sourceEnvironment: sourceEnvironment,
-                targetEnvironment: gs.getProperty('glide.servlet.uri').toLowerCase(),
                 sourceSysId: sourceSysId,
-                updateSetSysId: updateSetSysId,
-                limitSet: limitSet,
-                deploy: deploy,
-                step: 'loadUpdateSet'
+                targetEnvironment: gs.getProperty('glide.servlet.uri').toLowerCase(),
             };
 
             return payload;
