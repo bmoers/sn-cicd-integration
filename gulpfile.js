@@ -31,13 +31,13 @@ gulp.task('namespace', function () {
         if you want to install this US in your own company namespace,
         set it below and run 'gulp namespace --name your-name-space'
     */
-    
+
     const customNameSpace = arg.name;
     if (!customNameSpace)
         throw Error('run: gulp namespace --name your-name-space')
 
     console.log(`Replacing namespace with '${customNameSpace}'`);
-    
+
     var paths = [
         "update_set/**/*.xml"
     ];
@@ -63,9 +63,16 @@ gulp.task('update-set', function () {
         .pipe(replace(`<namespace>${process.env.REPLACE_NAMESPACE || 'devops'}</namespace>`, '<namespace>devops</namespace>'))
         .pipe(replace(`<value>${process.env.REPLACE_SECRET}</value>`, '<value>5VCSj9SPRH3EbNHrBSTf</value>'))
         .pipe(replace(`/${process.env.REPLACE_NAMESPACE}/`, '/devops/'))
+        .pipe(replace(/(<name>cicd-integration\.enabled<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>false</value>'))
+        .pipe(replace(/(<name>cicd-integration\.enabled\.on-scoped-app<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>false</value>'))
+        .pipe(replace(/(<name>cicd-integration\.enabled\.on-update-set<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>false</value>'))
+        .pipe(replace(/(<name>cicd-integration\.message\.build-state<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>false</value>'))
+        .pipe(replace(/(<name>cicd-integration\.server\.url<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>https://localhost:8443</value>'))
+        .pipe(replace(/(<name>cicd-integration\.server\.through-mid<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>true</value>'))
+        .pipe(replace(/(<name>cicd-integration\.jsdocButton\.enabled<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>true</value>'))
         .pipe(replace(/<(u_[^\/>]*)\/>/g, ''))
         .pipe(replace(/<(u_[^\s\/>]*)[^>]*>.*<\/(\1)>/g, ''))
-        
+
         .pipe(replace(new RegExp(process.env.USERNAME, 'ig'), 'b.moers'))
         .pipe(rename({
             basename: "CICD Integration"
