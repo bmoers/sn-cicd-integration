@@ -211,7 +211,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
             gs.info('[CICD API] create new update set');
             var us = new GlideRecord('sys_update_set');
             us.initialize();
-            us.setValue('name', sc.getValue('name').concat(' – ', sc.getValue('version')));
+            us.setValue('name', sc.getValue('name').concat(' - ', sc.getValue('version')));
             us.setValue('application', appId);
             us.setValue('state', 'build');
             us.setValue('description', 'Automatically created by CICD Process'.concat(sc.getValue('short_description') ? '\n'.concat(sc.getValue('short_description')) : ''));
