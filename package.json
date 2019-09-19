@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "gulp"
+    "start": "gulp",
+    "deploy": "node deploy-update-set.js"
   },
   "repository": {
     "type": "git",
@@ -18,14 +19,19 @@
   },
   "homepage": "https://github.com/bmoers/sn-cicd-integration#readme",
   "devDependencies": {
+    "bluebird": "^3.5.5",
+    "fs-extra": "^8.1.0",
     "gulp": "3.9.1",
     "gulp-clean": "0.4.0",
     "gulp-notify": "3.2.0",
     "gulp-rename": "1.4.0",
     "gulp-replace": "1.0.0",
-    "gulp-using": "0.1.1"
+    "gulp-using": "0.1.1",
+    "puppeteer": "^1.20.0",
+    "request": "^2.88.0",
+    "request-promise": "^4.2.4"
   },
   "dependencies": {
-    "dotenv": "6.1.0"
+    "dotenv": "^8.1.0"
   }
 }
