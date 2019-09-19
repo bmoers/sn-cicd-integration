@@ -65,6 +65,7 @@ gulp.task('update-set', function () {
         .pipe(replace(`/${process.env.REPLACE_NAMESPACE}/`, '/devops/'))
         .pipe(replace(/(<name>cicd-integration\.enabled<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>false</value>'))
         .pipe(replace(/(<name>cicd-integration\.enabled\.on-scoped-app<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>false</value>'))
+        .pipe(replace(/(<name>cicd-integration\.scoped-app\.single-update-set<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>false</value>'))
         .pipe(replace(/(<name>cicd-integration\.enabled\.on-update-set<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>false</value>'))
         .pipe(replace(/(<name>cicd-integration\.message\.build-state<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>false</value>'))
         .pipe(replace(/(<name>cicd-integration\.server\.url<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>https://localhost:8443</value>'))
