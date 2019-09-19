@@ -1,5 +1,5 @@
 /* exported CiCdRun */
-/* global gs, sn_ws, sn_ws_err, Class, GlideEncrypter, VirtualAppTools, GlideSecureRandomUtil, GlideUpdateSetWorker, GlideDateTime, GlideRecord, GlideProperties, JSON, SreLogger, VirtualAppAbstract, WsAbstractCore */
+/* global CiCdApi */
 
 /**
  * CDCD Trigger to execute run in CICD Server
@@ -61,7 +61,7 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
              * @returns {undefined}
              */
             log: function () {
-                if (arguments.length) arguments[0] = '[CiCdRun] ' + arguments[0];
+                if (arguments.length) arguments[0] = '[' + self.type + '] ' + arguments[0];
                 gs.info.apply(null, arguments);
             },
             /**
@@ -70,7 +70,7 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
              * @returns {undefined}
              */
             warn: function () {
-                if (arguments.length) arguments[0] = '[CiCdRun] ' + arguments[0];
+                if (arguments.length) arguments[0] = '[' + self.type + '] ' + arguments[0];
                 gs.warn.apply(null, arguments);
             },
             /**
@@ -79,7 +79,7 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
              * @returns {undefined}
              */
             error: function () {
-                if (arguments.length) arguments[0] = '[CiCdRun] ' + arguments[0];
+                if (arguments.length) arguments[0] = '[' + self.type + '] ' + arguments[0];
                 gs.error.apply(null, arguments);
             },
             /**
@@ -88,9 +88,9 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
              * @returns {undefined}
              */
             debug: function () {
-                if (arguments.length) arguments[0] = '[CiCdRun] ' + arguments[0];
+                if (arguments.length) arguments[0] = '[' + self.type + '] ' + arguments[0];
                 gs.debug.apply(null, arguments);
-            },
+            }
         };
 
         var cicdServerMatch = gs.getProperty('cicd-integration.server.url', '').match(/((?:http[s]?:\/\/)[^\/]*)/i);
@@ -106,6 +106,7 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
             midServerName: gs.getProperty('cicd-integration.server.mid-server-name', self.getMidServer()),
             cicdServerRunURL: cicdServer.concat('/run'),
             cicdServerPreviewCompleteURL: cicdServer.concat('/preview-complete'),
+            cicdServerDeploymentCompleteURL: cicdServer.concat('/deployment-complete'),
         }, JSON.parse(JSON.stringify(settings || {})));
     },
 
@@ -121,14 +122,18 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
 
         if (!self.settings.cicdEnabled)
             return;
+
         if (gs.action.getGlideURI().getMap().get('sysparm_view') != 'cicd_preview')
             return;
 
+        if (current.getValue('state') == 'committed')
+            return;
+
         if (GlidePreviewProblemHandler.hasUnresolvedProblems(current.sys_id)) {
-            gs.addErrorMessage("<p><b>[CICD]</b> Please resolve the conflicts below.<br>'Skip' will ignore the record during future deployments. 'Accept' will force the record during future deployments.<br>If the update set contains unwanted changes, click on '[CICD] Cancel'.</p>");
+            gs.addErrorMessage("<p><b>[CICD]</b> Please resolve the conflicts below.<br>'Skip' will ignore the record during future deployments. 'Accept' will force the record during future deployments.<br>If the update set contains unwanted changes, click on 'Cancel Run [CICD]'.</p>");
             current.setWorkflow(false);
         } else {
-            gs.addInfoMessage("<p><b>[CICD]</b> To continue the pipeline, please confirm the preview problems now.<br>If the update set contains unwanted changes, click on '[CICD] Cancel'.</p>");
+            gs.addInfoMessage("<p><b>[CICD]</b> To continue the pipeline, please confirm the preview problems now.<br>If the update set contains unwanted changes, click on 'Cancel Run [CICD]'.</p>");
             current.setWorkflow(false);
         }
 
@@ -152,6 +157,8 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
         if (gs.nil(current))
             return;
 
+        if (!gs.nil(current.installed_from))
+            return;
 
         var url = self.settings.cicdServer.concat('/goto/us/').concat(current.getValue('sys_id'));
 
@@ -163,6 +170,10 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
 
             case 'conflict_review_passed':
                 gs.addInfoMessage('CICD: Conflict review <a href="'.concat(url).concat('" target="_blank">passed</a>'));
+                break;
+
+            case 'build':
+                gs.addInfoMessage('CICD: Build is <a href="'.concat(url).concat('" target="_blank">requested</a>'));
                 break;
 
             case 'build_in_progress':
@@ -182,7 +193,7 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
                 break;
 
             case 'deployment_manual_interaction':
-                gs.addInfoMessage('CICD: Deployment needs manual <a href="'.concat(url).concat('" target="_blank">interaction</a>'));
+                gs.addInfoMessage('CICD: Deployment requires manual <a href="'.concat(url).concat('" target="_blank">interaction</a>'));
                 break;
 
             case 'build_failed':
@@ -197,6 +208,35 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
 
         }
     },
+
+
+
+    /**
+     * Async inform CICD server if sys_remote_update_set is completed
+     * 
+     * @param {any} current
+     * @returns {undefined}
+     */
+    sys_remote_update_set_AsyncIU: function (current) {
+        var self = this;
+
+        if (!self.settings.cicdEnabled)
+            return;
+
+        if (!gs.isInteractive())
+            return;
+
+        if (current.state.changesTo('committed')) {
+            var resolutions = self.getResolutions(current.getValue('sys_id'));
+
+            self.deploymentComplete({
+                isInteractive: gs.isInteractive(),
+                remoteUpdateSetID: current.getValue('sys_id'),
+                resolutions: resolutions
+            })
+        }
+    },
+
 
     /**
      * Example implementation of a Business-Rule to trigger the CICD Pipeline
@@ -252,13 +292,71 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
         }
     },
 
+
     /**
-     * UI Action on sys_app to trigger the CICD Pipeline
+     * Helper function to check if there is already a pending job for an application
+     * (via the auto generated update set)
      * 
-     * @param {GlideRecord} current
+     * @param {any} currentSysApp
+     * @returns {ConditionalExpression} 
+     */
+    _getAppUpdateSetInProgress: function (currentSysApp) {
+        var self = this;
+        if (!self.settings.cicdEnabled)
+            return false;
+        if (gs.nil(currentSysApp))
+            return false;
+
+        var singleUpdateSet = Boolean(gs.getProperty('cicd-integration.scoped-app.single-update-set', 'false') == 'true');
+        if (!singleUpdateSet)
+            return false;
+
+        var sysId = new GlideChecksum(currentSysApp.getValue('name').concat(currentSysApp.getValue('version'), currentSysApp.getValue('sys_id'), gs.getProperty('instance_name'))).getMD5();
+
+        var checkUs = new GlideRecord('sys_update_set');
+        checkUs.addQuery('sys_id', sysId);
+        checkUs.addQuery('state', '!=', 'complete');
+        checkUs.addQuery('state', '!=', 'ignore');
+        checkUs.addQuery('state', '!=', 'Do not transport');
+        checkUs.setLimit(1);
+        checkUs.query();
+        return (checkUs._next()) ? checkUs : false;
+    },
+
+    /**
+     * UI Action condition function to show or hide the "Build this Application [CICD]" button
+     * 
+     * @param {any} currentSysApp
+     * @returns {ConditionalExpression} 
+     */
+    showBuildThisApplicationUiAction: function (currentSysApp) {
+        var self = this;
+
+        if (!self.settings.cicdEnabled)
+            return false;
+
+        if (!self.settings.cicdOnScopedAppsEnabled)
+            return false;
+
+        if (gs.nil(currentSysApp))
+            return false;
+
+        if (currentSysApp.vendor == 'ServiceNow')
+            return false;
+
+        if (!currentSysApp.canWrite())
+            return false;
+
+        return (self._getAppUpdateSetInProgress(currentSysApp)) ? false : true;
+    },
+
+    /**
+     * Display Business Rule on sys_app
+     * 
+     * @param {any} currentSysApp
      * @returns {undefined}
      */
-    sys_appUiAction: function (current) {
+    sys_app_Display: function (currentSysApp) {
         var self = this;
 
         if (!self.settings.cicdEnabled)
@@ -267,27 +365,61 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
         if (!self.settings.cicdOnScopedAppsEnabled)
             return;
 
-        if (gs.nil(current))
+        if (gs.nil(currentSysApp))
             return;
 
-        if (!gs.isInteractive())
-            return;
+        // only show the message if there is a update set in progress
+        var us = self._getAppUpdateSetInProgress(currentSysApp);
+        if (us) {
+            var url = self.settings.cicdServer.concat('/goto/us/').concat(us.getValue('sys_id'));
+            return gs.addInfoMessage('There is a CICD run in <a href="' + url + '" target="_blank">progress</a> for this application.<br>Please wait for it to end or in case of failure set the <a href="' + us.getLink(true) + '">update set</a> to \'ignore\' state and start over again.');
+        }
+    },
 
-        var cicdApi = new CiCdApi();
-        var scopedUpdateSet = cicdApi.publishToUpdateSet(current.getValue('sys_id'));
-        gs.addInfoMessage('Application exported as <a href="/sys_update_set.do?sys_id=' + scopedUpdateSet.updateSetSysId + '">update set</a>. CICD Process started.')
+    /**
+     * UI Action on sys_app to trigger the CICD Pipeline
+     * 
+     * @param {GlideRecord} currentSysApp
+     * @returns {undefined}
+     */
+    sys_appUiAction: function (currentSysApp) {
+        var self = this;
+        try {
+            if (!self.settings.cicdEnabled)
+                return;
 
-        self.now({
-            updateSet: scopedUpdateSet.updateSetSysId,
-            application: {
-                id: current.getValue('sys_id'),             // the id of the application
-                name: current.getValue('name')              // the name of the application
-            },
-            git: {
-                repository: ((current.getValue('scope') == 'global') ? current.getValue('name') : current.getValue('scope')).toLowerCase().replace(/\s+/g, '_') // assuming the git repo shares the name with the scoped app
+            if (!self.settings.cicdOnScopedAppsEnabled)
+                return;
+
+            if (gs.nil(currentSysApp))
+                return;
+
+            if (!gs.isInteractive())
+                return;
+
+            var cicdApi = new CiCdApi();
+            var scopedUpdateSet = cicdApi.publishToUpdateSet(currentSysApp.getValue('sys_id'));
+
+            gs.addInfoMessage('Application exported as <a href="/sys_update_set.do?sys_id=' + scopedUpdateSet.updateSetSysId + '">update set</a>. CICD Process started.')
+
+            self.now({
+                updateSet: scopedUpdateSet.updateSetSysId,
+                application: {
+                    id: currentSysApp.getValue('sys_id'), // the id of the application
+                    name: currentSysApp.getValue('name')  // the name of the application
+                },
+                git: {
+                    repository: ((currentSysApp.getValue('scope') == 'global') ? currentSysApp.getValue('name') : currentSysApp.getValue('scope')).toLowerCase().replace(/\s+/g, '_') // assuming the git repo shares the name with the scoped app
+                }
+            });
+        } catch (e) {
+
+            if (e.code == "ALREADY_RUNNING") {
+                return gs.addErrorMessage('There is already a <a href="' + e.link + '">CICD run</a> in progress for this application.');
             }
-        });
 
+            gs.error(e);
+        }
     },
 
 
@@ -296,7 +428,7 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
      * Rule to display the cancel ui action
      * 
      * @param {any} current
-     * @returns {LogicalExpression} 
+     * @returns {LogicalExpression}
      */
     sys_remote_updateDisplayCancelUiAction: function (current) {
         return (gs.getProperty('cicd-integration.enabled', 'false') == 'true' && current.state == 'conflict_review' && current.canWrite())
@@ -343,7 +475,7 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
      * Rule to display the confirm ui action
      * 
      * @param {any} current
-     * @returns {LogicalExpression} 
+     * @returns {LogicalExpression}
      */
     sys_remote_updateDisplayConfirmUiAction: function (current) {
         return (gs.getProperty('cicd-integration.enabled', 'false') == 'true' && current.state == 'conflict_review' && !GlidePreviewProblemHandler.hasUnresolvedProblems(current.sys_id) && current.canWrite())
@@ -373,48 +505,7 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
             return gs.addErrorMessage('This update set is not in the conflict preview state');
 
 
-        /*
-        var url = action.getValues().get('sysparm_referring_url');
-if(url)
-	returnUrl = url;
-var file = new GlideRecord("sys_metadata");
-file.addQuery("sys_update_name", current.name.toString());
-file.query();
-if(!file.next()) {
-	gs.addInfoMessage(gs.getMessage("No record exists for this update"));
-	action.setRedirectURL(current);
-} else {
-	var relatedRecord = new GlideRecord(file.sys_class_name);
-	relatedRecord.get(file.sys_id);
-	action.setRedirectURL(relatedRecord);
-	action.setReturnURL(returnUrl);
-}
-        */
-
-        var resolutions = {};
-        var prb = new GlideRecord('sys_update_preview_problem');
-        prb.addQuery('remote_update_set', current.getValue('sys_id'));
-        prb.query();
-        while (prb._next()) {
-
-            var updateName = prb.remote_update.getRefRecord().getValue('name');
-            var file = new GlideRecord("sys_metadata");
-            var sysId = null,
-                className = null,
-                updatedOn = 0;
-            if (file.get("sys_update_name", updateName)) {
-                sysId = file.getValue('sys_id');
-                className = file.getValue('sys_class_name');
-                updatedOn = new GlideDateTime(file.getValue('sys_updated_on')).getNumericValue();
-            }
-
-            resolutions[updateName] = {
-                status: prb.getValue('status'), // skipped = 'Skip remote update'; ignored = 'Accept remote update'
-                sysId: sysId,
-                className: className,
-                updatedOn: updatedOn
-            }
-        }
+        var resolutions = self.getResolutions(current.getValue('sys_id'));
 
         try {
             var result = self.preview({
@@ -430,6 +521,57 @@ if(!file.next()) {
             action.setRedirectURL(current);
         }
     },
+
+
+    /**
+     * Get all resolutions of a remote_update_set
+     * 
+     * @param {string} remoteUpdateSetID the sysId of the remote_update_set
+     * @returns {any}
+     */
+    getResolutions: function (remoteUpdateSetID) {
+        var resolutions = {};
+        var prb = new GlideRecord('sys_update_preview_problem');
+        prb.addQuery('remote_update_set', remoteUpdateSetID);
+        prb.query();
+        while (prb._next()) {
+
+            var updateName = prb.remote_update.getRefRecord().getValue('name');
+
+            var file = new GlideRecord("sys_metadata");
+            var sysId = null,
+                className = null,
+                updatedOn = 0;
+
+            if (file.get("sys_update_name", updateName)) {
+                sysId = file.getValue('sys_id');
+                className = file.getValue('sys_class_name');
+                updatedOn = new GlideDateTime(file.getValue('sys_updated_on')).getNumericValue();
+            } else {
+                // fall back in case of e.g. 'sys_app'
+                const m = updateName.match(/(^.*)_([0-9a-f]{32})$/m);
+                if (m) {
+                    sysId = m[2];
+                    className = m[1];
+                    file = new GlideRecord(className);
+                    if (file.get(sysId)) {
+                        updatedOn = new GlideDateTime(file.getValue('sys_updated_on')).getNumericValue();
+                    }
+                }
+            }
+
+            resolutions[updateName] = {
+                status: prb.getValue('status'), // skipped = 'Skip remote update'; ignored = 'Accept remote update',
+                resolvedBy: (prb.getValue('status')) ? prb.getValue('sys_updated_by') : null,
+                sysId: sysId,
+                className: className,
+                updatedOn: updatedOn,
+                host: gs.getProperty('glide.servlet.uri'),
+            }
+        }
+        return resolutions;
+    },
+
 
     /**
      * Send preview results back to CICD pipeline.
@@ -452,13 +594,12 @@ if(!file.next()) {
         var options = self.assign({
             doCancel: true,
             remoteUpdateSet: null,
-            host: gs.getProperty('glide.servlet.uri'),
             user: {
                 name: user.getName(),       // the person confirmed the collision
                 fullName: user.getFullName(),   // full name of that person
                 email: user.getEmail()          // email of same
             },
-            resolutions: []
+            resolutions: {}
         }, JSON.parse(JSON.stringify(opts || {})));
 
 
@@ -508,6 +649,72 @@ if(!file.next()) {
         }
 
     },
+
+
+    /**
+     * Send deployment completed results back to CICD pipeline.
+     * 
+     * @param {any} opts for options see below
+     * @returns {undefined}
+     */
+    deploymentComplete: function (opts) {
+        var self = this;
+
+        if (!self.settings.cicdEnabled)
+            return;
+
+        var user = gs.getUser();
+        var options = self.assign({
+            remoteUpdateSet: null,
+            host: gs.getProperty('glide.servlet.uri'),
+            user: {
+                name: user.getName(),
+                fullName: user.getFullName(),
+                email: user.getEmail()
+            },
+            resolutions: {}
+        }, JSON.parse(JSON.stringify(opts || {})));
+
+
+        var request = new sn_ws.RESTMessageV2();
+        if (self.settings.throughMidServer) {
+            if (gs.nil(self.settings.midServerName))
+                throw '[previewComplete] MID Server not defined';
+            request.setMIDServer(self.settings.midServerName);
+        }
+
+        self.console.log('[deploymentComplete] Settings {0}', JSON.stringify(self.settings));
+        self.console.log('[deploymentComplete] Options {0}', JSON.stringify(options));
+
+        request.setEndpoint(self.settings.cicdServerDeploymentCompleteURL);
+        request.setRequestHeader("Accept", "application/json");
+        request.setRequestHeader("Content-Type", "application/json");
+        request.setHttpMethod('POST');
+
+        request.setRequestBody(JSON.stringify(options));
+
+        var response = request.execute(); // Async somehow does not perform
+        if (!response.haveError()) {
+            try {
+                var responseText = response.getBody(),
+                    responseJson = JSON.parse(responseText);
+                if (responseJson) {
+                    self.console.log("[deploymentComplete] successful - result is: {0}, text: {1}", responseJson, responseText);
+                    return responseJson;
+                }
+            } catch (e) {
+                self.console.error("[deploymentComplete] JSON parsing failed. {0}", e);
+                throw e;
+            }
+
+        } else {
+            var statusCode = response.getStatusCode();
+            self.console.error("[deploymentComplete] request ended in error - StatusCode {0}, ResponseMessage: {1}, Endpoint: {2}, RequestBody: {3}", statusCode, response.getErrorMessage(), self.settings.cicdServerDeploymentCompleteURL, options);
+            throw new Error(response.getErrorMessage());
+        }
+
+    },
+
 
     /**
      * Send an Update-Set to the CICD Pipeline.
