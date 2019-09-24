@@ -175,6 +175,87 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
     },
 
 
+    _cloneUpdateSet: function (updateSetSysId) {
+        var self = this;
+        var cloneUpdateSet = function (sysId, parentSysId, batchBaseSysId) {
+            var us = new GlideRecord('sys_update_set');
+            if (us.get(sysId)) {
+                self.console.info("cloning update set {0} with parent {1}", sysId, parentSysId);
+
+                us.setValue('name', '[CICD PREFLIGHT] - '.concat(us.getValue('name')));
+                us.setValue('description', 'This is the preflight copy of the update set \''.concat(sysId, '\' from \'', gs.getProperty('instance_name'), '\'.\nPlease do not deploy this update set.'));
+
+                if (parentSysId)
+                    us.setValue('parent', parentSysId)
+
+                if (batchBaseSysId)
+                    us.setValue('base_update_set', batchBaseSysId)
+
+                var copySysId = us.insert();
+
+                var isBatchBase = (sysId == us.getValue('base_update_set')); // the current update set is the base and must point to itself.
+                if (isBatchBase) {
+                    us.setValue('base_update_set', copySysId)
+                    us.update();
+                    batchBaseSysId = copySysId;
+                }
+                self.console("Cloned update set {0}", copySysId)
+
+                // clone all XML records
+                var usXml = new GlideRecord('sys_update_xml');
+                usXml.addQuery('update_set', sysId);
+                usXml.query();
+                while (usXml._next()) {
+                    usXml.setValue('update_set', copySysId);
+                    usXml.insert();
+                }
+
+                // copy all dependent update sets
+                var bus = new GlideRecord('sys_update_set');
+                bus.addQuery('sys_id', '!=', sysId);
+                bus.addQuery('parent', sysId);
+                bus._query();
+                while (bus._next()) {
+                    cloneUpdateSet(bus.getValue('sys_id'), copySysId, batchBaseSysId);
+                }
+                return copySysId;
+            }
+        }
+
+        return cloneUpdateSet(updateSetSysId);
+    },
+
+    _deleteClone: function (updateSetSysId) {
+        var self = this;
+
+        var deleteDependentUpdateSet = function (parentSysID) {
+            var bus = new GlideRecord('sys_update_set');
+            bus.addQuery('name', 'STARTSWITH', '[CICD PREFLIGHT]');
+            bus.addQuery('parent', parentSysID);
+            bus.query();
+            while (bus._next()) {
+                deleteDependentUpdateSet(bus.getValue('sys_id'));
+                self.console.log("Deleting update set " + bus.getValue('sys_id'));
+                bus.deleteRecord();
+            }
+
+        }
+
+        var us = new GlideRecord('sys_update_set');
+        us.addQuery('name', 'STARTSWITH', '[CICD PREFLIGHT]');
+        us.addQuery('sys_id', updateSetSysId);
+        us.setLimit(1);
+        us.query();
+        if (us._next()) {
+            deleteDependentUpdateSet(us.getValue('sys_id'));
+            self.console.log("Deleting update set " + us.getValue('sys_id'));
+            return us.deleteRecord();
+        }
+
+        return false;
+    },
+
+
     /**
      * Source API. <br>This is the entry point to trigger a deployment on a target env.
      * takes updateSetSysId and targetEnvironment from payload body. <p>
@@ -200,7 +281,7 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
             sourceUserName, sourcePassword,
             targetUserName, targetPassword,
             autoCreateCdUser,
-            gitDeployment, sourceUrl;
+            gitDeployment, sourceUrl, collisionDetect;
 
         /*
             {
@@ -239,10 +320,11 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
                 throw Error('updateSetSysId/commitId and targetEnvironment are mandatory');
             }
 
+            collisionDetect = Boolean(self.body.collisionDetect);
             commitId = gs.nil(self.body.commitId) ? null : self.body.commitId;
             updateSetSysId = self.body.updateSetSysId; // request.updateSetId
             sourceEnvironment = gs.getProperty('glide.servlet.uri').toLowerCase().replace(/\/$/, ""); // the current instance
-            gitDeployment = !gs.nil(commitId);
+            gitDeployment = (!collisionDetect && !gs.nil(commitId)); // collisionDetect can not be done via gitDeployment
 
             sourceUrl = gitDeployment ? sourceEnvironment.concat(self.getBaseURI(), '/source/') : sourceEnvironment;
 
@@ -286,6 +368,15 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
                     throw Error('UpdateSet is not in complete state');
                 }
 
+                /*
+                if (collisionDetect) {
+                    // clone the update set on the source env for preview
+                    updateSetSysId = self._cloneUpdateSet(updateSetSysId);
+                    us = new GlideRecord('sys_update_set');
+                    if (!us.get(updateSetSysId))
+                        throw Error('UpdateSet not found');
+                }
+                */
                 if (us.base_update_set.nil()) {
                     limitSet.push(updateSetSysId);
                 } else {
@@ -441,7 +532,7 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
 
                     sourceEnvironment: sourceEnvironment,
                     deploy: Boolean(self.body.deploy),
-                    collisionDetect: Boolean(self.body.collisionDetect),
+                    collisionDetect: collisionDetect,
                     conflicts: self.body.conflicts,
                     step: 'loadUpdateSet'
 
@@ -742,15 +833,13 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
 
                 var skip = (payload.conflicts.defaults.skip || '').split(',').map(function (m) { return m.trim(); }).filter(function (f) { return (f.length) });
                 var ignore = (payload.conflicts.defaults.ignore || '').split(',').map(function (m) { return m.trim(); }).filter(function (f) { return (f.length) });
+                var availableActions,
+                    hasMissingRecordAction;
 
                 if (skip.length) {
                     var skipProb = new GlideRecord('sys_update_preview_problem');
                     skipProb.addQuery('remote_update_set', payload.remoteUpdateSetSysId);
-                    skipProb.addQuery('status=NULL');
-                    // don't auto skip if referenced record is not found. e.g. 'Could not find a record in ecc_agent for column mid_server referenced in this update'
-                    missingRecordActions.forEach(function (action) {
-                        skipProb.addQuery('available_actions', 'NOTLIKE', action);
-                    });
+                    skipProb.addQuery('status', '');
                     var lenQuery;
                     skip.forEach(function (updateName, index) {
                         if (index == 0) {
@@ -764,6 +853,13 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
                     //self.console.log('[Conflict Default Resolution Skip] auto SKIP all problems matching this query: "{0}"', skipProb.getEncodedQuery());
                     skipProb.query();
                     while (skipProb._next()) {
+                        availableActions = skipProb.getValue('available_actions').split(',');
+                        hasMissingRecordAction = missingRecordActions.some(function (mAction) { return availableActions.indexOf(mAction) >= 0 });
+                        // don't auto skip if referenced record is not found. e.g. 'Could not find a record in ecc_agent for column mid_server referenced in this update'
+                        if (hasMissingRecordAction)
+                            continue;
+
+                        self.console.log('[Conflict Default Resolution Skip] Setting {0} to status \'skipped\'', skipProb.remote_update.getDisplayValue());
                         skipProb.setValue('status', 'skipped');
                         skipProb.setValue('description', '[CICD] - This issue was automatically SKIPPED by the CICD process (CICD_CD_DEPLOY_ALWAYS_SKIP_CONFLICTS)\n'.concat(skipProb.getValue('description')));
                         skipProb.update();
@@ -773,11 +869,7 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
                 if (ignore.length) {
                     var ignProb = new GlideRecord('sys_update_preview_problem');
                     ignProb.addQuery('remote_update_set', payload.remoteUpdateSetSysId);
-                    ignProb.addQuery('status=NULL');
-                    // don't auto ignore if referenced record is not found. e.g. 'Could not find a record in ecc_agent for column mid_server referenced in this update'
-                    missingRecordActions.forEach(function (action) {
-                        ignProb.addQuery('available_actions', 'NOTLIKE', action);
-                    });
+                    ignProb.addQuery('status', '');
                     var ignQuery;
                     ignore.forEach(function (updateName, index) {
                         if (index == 0) {
@@ -790,6 +882,13 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
                     //self.console.log('[Conflict Default Resolution Ignore] auto IGNORE all problems matching this query: "{0}"', ignProb.getEncodedQuery());
                     ignProb.query();
                     while (ignProb._next()) {
+                        availableActions = ignProb.getValue('available_actions').split(',');
+                        hasMissingRecordAction = missingRecordActions.some(function (mAction) { return availableActions.indexOf(mAction) >= 0 });
+                        // don't auto ignore if referenced record is not found. e.g. 'Could not find a record in ecc_agent for column mid_server referenced in this update'
+                        if (hasMissingRecordAction)
+                            continue;
+
+                        self.console.log('[Conflict Default Resolution Ignore] Setting {0} to status \'ignored\'', ignProb.remote_update.getDisplayValue());
                         ignProb.setValue('status', 'ignored');
                         ignProb.setValue('description', '[CICD] - This issue was automatically IGNORED by the CICD process (CICD_CD_DEPLOY_ALWAYS_IGNORE_CONFLICTS)\n'.concat(ignProb.getValue('description')));
                         ignProb.update();
