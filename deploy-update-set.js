@@ -9,6 +9,9 @@ const deploy = function (host) {
 
     const filePath = process.env.DEPLOY_FILE;
 
+    const f = filePath.split('/');
+
+
     console.log("Deploying file ", filePath)
 
     var formData = {
@@ -19,7 +22,7 @@ const deploy = function (host) {
         attachFile: {
             value: fs.createReadStream(__dirname + filePath),
             options: {
-                filename: 'CICD Integration.xml',
+                filename: `${f[f.length - 1].split('.')[0]}.xml`,
                 contentType: 'text/xml'
             }
         }
@@ -56,6 +59,7 @@ const deploy = function (host) {
 
         //console.log(formData);
         console.log(`deploy to ${host}`)
+        //console.log(formData);
 
         //return 'disabled';
 
@@ -69,19 +73,20 @@ const deploy = function (host) {
 
         //
     }).then((r) => {
-        console.log(r)
+        console.log(Object.keys(r));
 
         return { url };
     }).catch((e) => {
 
+        //console.log(e.response);
         if (e.statusCode == 302) {
-            console.log(`done on ${host}`)
+            console.log(`deployment done on ${host}`)
 
             return { url };
         }
 
         console.log(`error on ${host}`, e)
-        return `ERROR ON https://${host}.service-now.com/sys_remote_update_set_list.do?sysparm_query=sys_class_name%3Dsys_remote_update_set%5EstateINloaded%2Cpreviewed`
+        return `ERROR ON https://${host}.service-now.com/sys_remote_update_set_list.do?sysparm_query=sys_class_name%3Dsys_remote_update_set%5EstateINloaded%2Cpreviewed%5EnameSTARTSWITHCICD%20Integration%20-%201.4`
 
     });
 
@@ -102,7 +107,7 @@ const commitManually = function (hosts) {
             return browser.newPage().then((page) => {
                 return Promise.try(() => {
                     return page.setViewport({
-                        width: 1400,
+                        width: 1800,
                         height: 1000
                     });
                 }).then(() => {
@@ -115,8 +120,12 @@ const commitManually = function (hosts) {
                         waitUntil: 'networkidle2'
                     });
                 }).then(() => {
+                    return page.goto(`${url}/login.do?user_name=${username}&sys_action=sysverb_login&user_password=${password}`, {
+                        waitUntil: 'networkidle2'
+                    });
+                }).then(() => {
                     //page.close();
-                    return page.goto(`${url}/nav_to.do?uri=sys_remote_update_set_list.do%3Fsysparm_query%3Dsys_class_name%253Dsys_remote_update_set%255EstateINloaded%252Cpreviewed`, {
+                    return page.goto(`${url}/nav_to.do?uri=sys_remote_update_set_list.do%3Fsysparm_query%3Dsys_class_name%3Dsys_remote_update_set%5EstateINloaded%2Cpreviewed%5EnameSTARTSWITHCICD%20Integration%20-%201.4`, {
                         waitUntil: 'networkidle2',
                         timeout: 0
                     });
