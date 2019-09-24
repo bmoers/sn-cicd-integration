@@ -217,13 +217,10 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
      * @param {any} current
      * @returns {undefined}
      */
-    sys_remote_update_set_AsyncIU: function (current) {
+    sys_remote_update_set_After_IU: function (current) {
         var self = this;
 
         if (!self.settings.cicdEnabled)
-            return;
-
-        if (!gs.isInteractive())
             return;
 
         if (current.state.changesTo('committed')) {
@@ -593,7 +590,7 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
         var user = gs.getUser();
         var options = self.assign({
             doCancel: true,
-            remoteUpdateSet: null,
+            remoteUpdateSetID: null,
             user: {
                 name: user.getName(),       // the person confirmed the collision
                 fullName: user.getFullName(),   // full name of that person
@@ -603,7 +600,7 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
         }, JSON.parse(JSON.stringify(opts || {})));
 
 
-        if (!options.doCancel && GlidePreviewProblemHandler.hasUnresolvedProblems(options.remoteUpdateSet)) {
+        if (!options.doCancel && GlidePreviewProblemHandler.hasUnresolvedProblems(options.remoteUpdateSetID)) {
             throw '[preview] Update set has unresolved problems';
         }
 
@@ -665,7 +662,7 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
 
         var user = gs.getUser();
         var options = self.assign({
-            remoteUpdateSet: null,
+            remoteUpdateSetID: null,
             host: gs.getProperty('glide.servlet.uri'),
             user: {
                 name: user.getName(),
