@@ -212,7 +212,7 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
                     "__comment": "this is not the official hub payload",
                     "com.snc.teamdev.requires_codereview": gs.getProperty('com.snc.teamdev.requires_codereview'),
                     "instance_id": gs.getProperty('instance_id'),
-                    "instance_properties": "dunno.zip",
+                    "instance_properties": gs.getProperty('mid.buildstamp').concat('.zip'),
                     "upgrade_system_busy": GlidePluginManager.isUpgradeSystemBusy()
                 }));
             }
