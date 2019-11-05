@@ -4,12 +4,13 @@ var puppeteer = require('puppeteer');
 var fs = require('fs-extra');
 var Promise = require('bluebird');
 
+const filePath = process.env.DEPLOY_FILE;
+
+const f = filePath.split('/');
+
+const filter = encodeURIComponent(process.env.DEPLOY_FILTER)
 
 const deploy = function (host) {
-
-    const filePath = process.env.DEPLOY_FILE;
-
-    const f = filePath.split('/');
 
 
     console.log("Deploying file ", filePath)
@@ -86,7 +87,7 @@ const deploy = function (host) {
         }
 
         console.log(`error on ${host}`, e)
-        return `ERROR ON https://${host}.service-now.com/sys_remote_update_set_list.do?sysparm_query=sys_class_name%3Dsys_remote_update_set%5EstateINloaded%2Cpreviewed%5EnameSTARTSWITHCICD%20Integration%20-%201.4`
+        return `ERROR ON https://${host}.service-now.com/sys_remote_update_set_list.do?sysparm_query=sys_class_name%3Dsys_remote_update_set%5EstateINloaded%2Cpreviewed%5EnameSTARTSWITH${filter}`
 
     });
 
@@ -125,7 +126,7 @@ const commitManually = function (hosts) {
                     });
                 }).then(() => {
                     //page.close();
-                    return page.goto(`${url}/nav_to.do?uri=sys_remote_update_set_list.do%3Fsysparm_query%3Dsys_class_name%3Dsys_remote_update_set%5EstateINloaded%2Cpreviewed%5EnameSTARTSWITHCICD%20Integration%20-%201.4`, {
+                    return page.goto(`${url}/nav_to.do?uri=sys_remote_update_set_list.do%3Fsysparm_query%3Dsys_class_name%3Dsys_remote_update_set%5EstateINloaded%2Cpreviewed%5EnameSTARTSWITH${filter}`, {
                         waitUntil: 'networkidle2',
                         timeout: 0
                     });
