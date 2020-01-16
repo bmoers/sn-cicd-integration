@@ -21,10 +21,10 @@
   "devDependencies": {
     "bluebird": "^3.7.2",
     "fs-extra": "^8.1.0",
-    "gulp": "3.9.1",
+    "gulp": "^4.0.2",
     "gulp-clean": "0.4.0",
     "gulp-notify": "3.2.0",
-    "gulp-rename": "1.4.0",
+    "gulp-rename": "^2.0.0",
     "gulp-replace": "1.0.0",
     "gulp-using": "0.1.1",
     "puppeteer": "^1.20.0",

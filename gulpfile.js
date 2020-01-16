@@ -2,7 +2,7 @@ require('dotenv').config();
 
 const gulp = require('gulp');
 const rename = require('gulp-rename');
-const clean = require('gulp-clean');
+const gulpClean = require('gulp-clean');
 const notify = require('gulp-notify');
 const using = require('gulp-using');
 const replace = require('gulp-replace');
@@ -25,7 +25,7 @@ const arg = (argList => {
 
 })(process.argv);
 
-gulp.task('namespace', function () {
+const namespace = function () {
 
     /*
         if you want to install this US in your own company namespace,
@@ -49,15 +49,15 @@ gulp.task('namespace', function () {
         }))
         .pipe(gulp.dest('./'));
 
-});
+};
 
-gulp.task('clean', function (done) {
+const clean = function () {
     return gulp.src(['update_set/**/*.*'], { read: false })
         .pipe(using({}))
-        .pipe(clean());
-});
+        .pipe(gulpClean());
+};
 
-gulp.task('update-set', function () {
+const updateSet = function () {
     return gulp.src('original/sys_remote_update_set_*.xml')
         .pipe(replace(new RegExp(process.env.REPLACE_COMPANY, 'ig'), 'company'))
         .pipe(replace(`<namespace>${process.env.REPLACE_NAMESPACE || 'devops'}</namespace>`, '<namespace>devops</namespace>'))
@@ -79,17 +79,25 @@ gulp.task('update-set', function () {
             basename: "CICD Integration"
         }))
         .pipe(gulp.dest('update_set/.'));
-});
+};
 
-gulp.task('script', function () {
+const script = function () {
     var paths = ['script_include/**/*.js', 'processor/**/*.js'];
     return gulp.src(paths, { base: "./" })
         .pipe(using({}))
         .pipe(replace(new RegExp(process.env.USERNAME, 'ig'), 'b.moers'))
         .pipe(replace(`/${process.env.REPLACE_NAMESPACE}/`, '/devops/'))
         .pipe(gulp.dest('./'));
-});
+};
 
-gulp.task('default', function () {
-    return gulp.start(['clean', 'update-set', 'script']);
-})
+
+const build = gulp.series(clean, gulp.parallel(updateSet, script));
+
+
+exports.namespace = namespace;
+
+exports.clean = clean;
+
+exports.build = build;
+
+exports.default = build;

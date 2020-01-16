@@ -89,7 +89,7 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
         var request = new sn_ws.RESTMessageV2();
         if (self.settings.throughMidServer) {
             if (gs.nil(self.settings.midServerName))
-                throw 'MID Server not defined';
+                throw 'no running MID server available';
             request.setMIDServer(self.settings.midServerName);
         }
 
@@ -130,7 +130,7 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
         var request = new sn_ws.RESTMessageV2();
         if (self.settings.throughMidServer) {
             if (gs.nil(self.settings.midServerName))
-                throw 'MID Server not defined';
+                throw 'no running MID server available';
             request.setMIDServer(self.settings.midServerName);
         }
 
@@ -212,14 +212,163 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
                     "__comment": "this is not the official hub payload",
                     "com.snc.teamdev.requires_codereview": gs.getProperty('com.snc.teamdev.requires_codereview'),
                     "instance_id": gs.getProperty('instance_id'),
-                    "instance_properties": gs.getProperty('mid.buildstamp').concat('.zip'),
+                    "instance_properties": gs.getProperty('mid.buildstamp', 'dunno').concat('.zip'),
                     "upgrade_system_busy": GlidePluginManager.isUpgradeSystemBusy()
                 }));
             }
         }
 
+    },
 
+    /**
+     * UpdateSet REST Web Service Endpoint for POST messages
+     * 
+     * On some environments, SOAP request to the scripted 'source' SOAP API (like /api/devops/cicd/source/sys_update_xml.do?SOAP)
+     * are routed to the REST API. The REST processor has in this case a higher priority.
+     * To avoid update set deployment failure, this REST API exposes the same functionality via REST.
+     * 
+     * POST: /api/devops/cicd/source/*
+     * 
+     * @param {*} request 
+     * @param {*} response 
+     */
+    restPostWrapper: function (request, response) {
+        var self = this;
 
+        try {
+            self.checkAccess();
+
+            var page = request.pathParams.page;
+
+            var requestBody = request.body;
+            var requestXml = requestBody ? (requestBody.dataString || '').trim() : '';
+
+            var envelope = '<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:cicd="http://schemas.moers.swiss/soap/cicd" cicd:rest="true"><SOAP-ENV:Body></SOAP-ENV:Body></SOAP-ENV:Envelope>';
+            response.setContentType('text/xml');
+
+            var writer = response.getStreamWriter();
+
+            switch (page) {
+                case 'sys_properties.do':
+                    response.setStatus(200);
+                    writer.writeString(self.sysPropertiesWS(requestXml, envelope).toString());
+                    break;
+
+                case 'sys_scope.do':
+                    response.setStatus(200);
+                    writer.writeString(self.sysScopeWS(requestXml, envelope).toString());
+                    break;
+
+                case 'sys_update_set.do':
+                    response.setStatus(200);
+                    writer.writeString(self.updateSetWS(requestXml, envelope).toString());
+                    break;
+
+                case 'sys_update_xml.do':
+                    response.setStatus(200);
+                    writer.writeString(self.updateSetXmlWS(requestXml, envelope).toString());
+                    break;
+
+                default:
+                    response.setStatus(404);
+                    break;
+            }
+        } catch (e) {
+            self.console.error('restPostWrapper ' + e);
+            //response.setError(new sn_ws_err.BadRequestError(e));
+            throw e;
+        }
+    },
+
+    /**
+     * UpdateSet Web Service
+     * 
+     * @param {*} requestXml 
+     * @param {*} envelope 
+     */
+    updateSetWS: function (requestXml, envelope) {
+        var self = this;
+
+        var payload = gs.xmlToJSON(requestXml);
+        var body = payload['SOAP-ENV:Envelope']['SOAP-ENV:Body'];
+        var funcName = Object.keys(body)[0];
+
+        var query = body[funcName]['__encoded_query'];
+        var commitId = null;
+        var count = 0;
+        if (query) {
+            var match = query.match(/^sys_idIN(.*)$/i);
+            if (match && match[1]) {
+                commitId = match[1];
+                count = 1;
+            }
+        }
+
+        var resp = (function () {
+            if (envelope) {
+                var env = new XMLDocument(envelope);
+                env.setCurrent(env.getElementByTagName('SOAP-ENV:Body'));
+                env.setCurrent(env.createElement(funcName + 'Response'));
+                return env;
+            } else {
+                return new XMLDocument("<" + funcName + "Response/>");
+            }
+        })();
+
+        if ('getKeys' == funcName) {
+
+            resp.createElement("count", count);
+            resp.createElement("sys_id", commitId);
+
+        } else if ('getRecords' == funcName) {
+
+            resp.createElement("count", count);
+            var result = resp.createElement("getRecordsResult");
+            resp.setCurrent(result);
+
+            var head = self.assign({
+                application: null,
+                application_name: null,
+                application_scope: null,
+                application_version: null,
+
+                base_update_set: null,
+                completed_by: null,
+                completed_on: null,
+                description: null,
+                installed_from: null,
+                install_date: null,
+                is_default: null,
+                merged_to: null,
+                name: null,
+                origin_sys_id: null,
+                parent: null,
+                release_date: null,
+                remote_sys_id: null,
+                state: null,
+                sys_created_by: null,
+                sys_created_on: null,
+                sys_id: null,
+                sys_mod_count: null,
+                sys_updated_by: null,
+                sys_updated_on: null
+            }, self._getUpdateSet(commitId))
+            //self.console.log('getUpdateSet {0}', JSON.stringify(head));
+
+            self._preference.set(head.sys_id, commitId)
+
+            // create the XML payload
+            Object.keys(head).forEach(function (name) {
+                if (head[name])
+                    resp.createElement(name, head[name]);
+                if (!name.startsWith('dv_') && !head['dv_' + name])
+                    resp.createElement('dv_' + name, head[name]);
+            });
+
+        }
+
+        //self.console.log('getUpdateSet XML ' + resp.toIndentedString());
+        return resp;
     },
 
     /**
@@ -231,91 +380,13 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
      */
     updateSetSoapWebService: function (requestXml, response) {
         var self = this;
-
         try {
-
-            this.checkAccess();
-
-            var payload = gs.xmlToJSON(requestXml);
-            var body = payload['SOAP-ENV:Envelope']['SOAP-ENV:Body'];
-            var funcName = Object.keys(body)[0];
-
-            //self.console.log('soapWebService ' + funcName + " --- XML " + requestXml);
-
-            var query = body[funcName]['__encoded_query'];
-            var commitId = null;
-            var count = 0;
-            if (query) {
-                var match = query.match(/^sys_idIN(.*)$/i);
-                if (match && match[1]) {
-                    commitId = match[1];
-                    count = 1;
-                }
-            }
-
-            var resp = new XMLDocument("<" + funcName + "Response/>");
-
-            if ('getKeys' == funcName) {
-
-                resp.createElement("count", count);
-                resp.createElement("sys_id", commitId);
-
-            } else if ('getRecords' == funcName) {
-
-                resp.createElement("count", count);
-                var result = resp.createElement("getRecordsResult");
-                resp.setCurrent(result);
-
-                var head = self.assign({
-                    application: null,
-                    application_name: null,
-                    application_scope: null,
-                    application_version: null,
-
-                    base_update_set: null,
-                    completed_by: null,
-                    completed_on: null,
-                    description: null,
-                    installed_from: null,
-                    install_date: null,
-                    is_default: null,
-                    merged_to: null,
-                    name: null,
-                    origin_sys_id: null,
-                    parent: null,
-                    release_date: null,
-                    remote_sys_id: null,
-                    state: null,
-                    sys_created_by: null,
-                    sys_created_on: null,
-                    sys_id: null,
-                    sys_mod_count: null,
-                    sys_updated_by: null,
-                    sys_updated_on: null
-                }, self._getUpdateSet(commitId))
-                //self.console.log('getUpdateSet {0}', JSON.stringify(head));
-
-                self._preference.set(head.sys_id, commitId)
-
-                // create the XML payload
-                Object.keys(head).forEach(function (name) {
-                    if (head[name])
-                        resp.createElement(name, head[name]);
-                    if (!name.startsWith('dv_') && !head['dv_' + name])
-                        resp.createElement('dv_' + name, head[name]);
-                });
-
-            }
-
-            //self.console.log('getUpdateSet XML ' + resp.toIndentedString());
-            response.soapResponseElement = resp.getDocumentElement();
-            return;
-
+            self.checkAccess();
+            response.soapResponseElement = self.updateSetWS(requestXml).getDocumentElement();
         } catch (e) {
             self.console.error('updateSetSoapWebService ' + e);
             response.e = e;
         }
-
     },
 
     /**
@@ -381,7 +452,64 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
     },
 
     /**
-     * UpdateSet XML SOAP Web Service Endpoint
+     * SysProperties Web Service
+     * 
+     * @param {*} requestXml 
+     * @param {*} envelope 
+     */
+    sysPropertiesWS: function (requestXml, envelope) {
+        var payload = gs.xmlToJSON(requestXml);
+        var body = payload['SOAP-ENV:Envelope']['SOAP-ENV:Body'];
+        var funcName = Object.keys(body)[0];
+
+
+        var resp = (function () {
+            if (envelope) {
+                var env = new XMLDocument(envelope);
+                env.setCurrent(env.getElementByTagName('SOAP-ENV:Body'));
+                env.setCurrent(env.createElement(funcName + 'Response'));
+                return env;
+            } else {
+                return new XMLDocument("<" + funcName + "Response/>");
+            }
+        })();
+
+
+        if ('getKeys' == funcName) {
+
+            var gr = new GlideRecord('sys_properties');
+            if (gr.get('name', 'instance_id')) {
+                resp.createElement("count", 1);
+                resp.createElement("sys_id", gr.getValue('sys_id'));
+            } else {
+                throw Error('property not found');
+            }
+
+        } else if ('getRecords' == funcName) {
+
+            resp.createElement("count", 1);
+            var result = resp.createElement("getRecordsResult");
+            resp.setCurrent(result);
+
+            var gr = new GlideRecord('sys_properties');
+            if (gr.get('name', 'instance_id')) {
+                Object.keys(gr).forEach(function (fieldName) {
+                    fieldName = fieldName.trim();
+
+                    if (!gr.isValidField(fieldName.split('.')[0]))
+                        return;
+                    resp.createElement(fieldName, gr.getValue(fieldName));
+                })
+            }
+        }
+
+        //self.console.log('getUpdateSet XML ' + resp.toIndentedString());
+        return resp;
+
+    },
+
+    /**
+     * SysProperties SOAP Web Service Endpoint
      * /api/devops/cicd/source/sys_properties
      * 
      * @param {*} requestXml 
@@ -389,59 +517,112 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
      */
     instanceIdWebService: function (requestXml, response) {
         var self = this;
-
         try {
-
-            this.checkAccess();
-
-            var payload = gs.xmlToJSON(requestXml);
-            var body = payload['SOAP-ENV:Envelope']['SOAP-ENV:Body'];
-            var funcName = Object.keys(body)[0];
-
-            var resp = new XMLDocument("<" + funcName + "Response/>");
-
-
-            if ('getKeys' == funcName) {
-
-                var gr = new GlideRecord('sys_properties');
-                if (gr.get('name', 'instance_id')) {
-                    resp.createElement("count", 1);
-                    resp.createElement("sys_id", gr.getValue('sys_id'));
-                } else {
-                    throw Error('property not found');
-                }
-
-            } else if ('getRecords' == funcName) {
-
-
-                resp.createElement("count", 1);
-                var result = resp.createElement("getRecordsResult");
-                resp.setCurrent(result);
-
-                var gr = new GlideRecord('sys_properties');
-                if (gr.get('name', 'instance_id')) {
-                    Object.keys(gr).forEach(function (fieldName) {
-                        fieldName = fieldName.trim();
-
-                        if (!gr.isValidField(fieldName.split('.')[0]))
-                            return;
-                        resp.createElement(fieldName, gr.getValue(fieldName));
-                    })
-                }
-            }
-
-
-            //self.console.log('getUpdateSet XML ' + resp.toIndentedString());
-            response.soapResponseElement = resp.getDocumentElement();
-            return;
+            self.checkAccess();
+            response.soapResponseElement = self.sysPropertiesWS(requestXml).getDocumentElement();
         } catch (e) {
-            self.console.error('sysScopeSoapWebService ' + e);
+            self.console.error('sysPropertiesWS ' + e);
             response.e = e;
         }
     },
 
+
     /**
-     * UpdateSet XML SOAP Web Service Endpoint
+     * SysScope Web Service
+     * 
+     * @param {*} requestXml 
+     * @param {*} envelope 
+     */
+    sysScopeWS: function (requestXml, envelope) {
+        var self = this;
+
+        var payload = gs.xmlToJSON(requestXml);
+        var body = payload['SOAP-ENV:Envelope']['SOAP-ENV:Body'];
+
+        var funcName = Object.keys(body)[0];
+        var scopeSysId = null;
+
+        var resp = (function () {
+            if (envelope) {
+                var env = new XMLDocument(envelope);
+                env.setCurrent(env.getElementByTagName('SOAP-ENV:Body'));
+                env.setCurrent(env.createElement(funcName + 'Response'));
+                return env;
+            } else {
+                return new XMLDocument("<" + funcName + "Response/>");
+            }
+        })();
+
+        if ('getKeys' == funcName) {
+            scopeSysId = body['getKeys']['sys_id'];
+            resp.createElement("count", 1);
+            resp.createElement("sys_id", scopeSysId);
+
+        } else if ('getRecords' == funcName) {
+            var query = body['getRecords']['__encoded_query'];
+            scopeSysId = null;
+
+            if (query) {
+                var match = query.match(/^sys_idIN(.*)$/i);
+                if (match && match[1]) {
+                    scopeSysId = match[1];
+                }
+            }
+            if (!scopeSysId)
+                throw "No sys_id found in query";
+
+            resp.createElement("count", 1);
+            var result = resp.createElement("getRecordsResult");
+            resp.setCurrent(result);
+
+            var head = self.assign({
+                active: 1,
+                can_edit_in_studio: 1,
+                enforce_license: 'log',
+                js_level: 'helsinki_es5',
+                licensable: 0,
+                license_category: undefined,
+                license_model: 'none',
+                logo: undefined,
+                name: 'Scope Name',
+                'private': 0,
+                restrict_table_access: 0,
+                runtime_access_tracking: 'permissive',
+                scope: 'scope_name',
+                scoped_administration: 0,
+                short_description: undefined,
+                source: 'scope_name',
+                sys_class_name: 'sys_app',
+                sys_created_by: 'admin',
+                sys_created_on: '2015-05-18 00:00:00',
+                sys_id: '000000000000000000000000000000',
+                sys_mod_count: 0,
+                sys_updated_by: 'system',
+                sys_updated_on: '2015-05-18 00:00:00',
+                template: undefined,
+                trackable: 1,
+                vendor: undefined,
+                vendor_prefix: undefined,
+                version: '1.0.0'
+            }, self._getScope(scopeSysId))
+            //self.console.log('getUpdateSet {0}', JSON.stringify(head));
+
+            // create the XML payload
+            Object.keys(head).forEach(function (name) {
+                if (head[name])
+                    resp.createElement(name, head[name]);
+                /*
+                if (!name.startsWith('dv_') && !head['dv_' + name])
+                    resp.createElement('dv_' + name, head[name]);
+                */
+            });
+        }
+        //self.console.log('getUpdateSet XML ' + resp.toIndentedString());
+        return resp;
+    },
+
+    /**
+     * SysScope SOAP Web Service Endpoint
      * /api/devops/cicd/source/sys_scope
      * 
      * @param {*} requestXml 
@@ -449,95 +630,101 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
      */
     sysScopeSoapWebService: function (requestXml, response) {
         var self = this;
-
         try {
-
-            this.checkAccess();
-
-            var payload = gs.xmlToJSON(requestXml);
-            var body = payload['SOAP-ENV:Envelope']['SOAP-ENV:Body'];
-
-            var funcName = Object.keys(body)[0];
-            var scopeSysId = null;
-
-            var resp = new XMLDocument("<" + funcName + "Response/>");
-
-
-            if ('getKeys' == funcName) {
-                scopeSysId = body['getKeys']['sys_id'];
-                resp.createElement("count", 1);
-                resp.createElement("sys_id", scopeSysId);
-
-            } else if ('getRecords' == funcName) {
-                var query = body['getRecords']['__encoded_query'];
-                scopeSysId = null;
-
-                if (query) {
-                    var match = query.match(/^sys_idIN(.*)$/i);
-                    if (match && match[1]) {
-                        scopeSysId = match[1];
-                    }
-                }
-                if (!scopeSysId)
-                    throw "No sys_id found in query";
-
-                resp.createElement("count", 1);
-                var result = resp.createElement("getRecordsResult");
-                resp.setCurrent(result);
-
-                var head = self.assign({
-                    active: 1,
-                    can_edit_in_studio: 1,
-                    enforce_license: 'log',
-                    js_level: 'helsinki_es5',
-                    licensable: 0,
-                    license_category: undefined,
-                    license_model: 'none',
-                    logo: undefined,
-                    name: 'Scope Name',
-                    'private': 0,
-                    restrict_table_access: 0,
-                    runtime_access_tracking: 'permissive',
-                    scope: 'scope_name',
-                    scoped_administration: 0,
-                    short_description: undefined,
-                    source: 'scope_name',
-                    sys_class_name: 'sys_app',
-                    sys_created_by: 'admin',
-                    sys_created_on: '2015-05-18 00:00:00',
-                    sys_id: '000000000000000000000000000000',
-                    sys_mod_count: 0,
-                    sys_updated_by: 'system',
-                    sys_updated_on: '2015-05-18 00:00:00',
-                    template: undefined,
-                    trackable: 1,
-                    vendor: undefined,
-                    vendor_prefix: undefined,
-                    version: '1.0.0'
-                }, self._getScope(scopeSysId))
-                //self.console.log('getUpdateSet {0}', JSON.stringify(head));
-
-                // create the XML payload
-                Object.keys(head).forEach(function (name) {
-                    if (head[name])
-                        resp.createElement(name, head[name]);
-                    /*
-                    if (!name.startsWith('dv_') && !head['dv_' + name])
-                        resp.createElement('dv_' + name, head[name]);
-                    */
-                });
-
-            }
-
-
-            //self.console.log('getUpdateSet XML ' + resp.toIndentedString());
-            response.soapResponseElement = resp.getDocumentElement();
-            return;
+            self.checkAccess();
+            response.soapResponseElement = self.sysScopeWS(requestXml).getDocumentElement();
         } catch (e) {
-            self.console.error('sysScopeSoapWebService ' + e);
+            self.console.error('sysScopeWS ' + e);
             response.e = e;
         }
     },
+
+
+    /**
+     * UpdateSetXml Web Service
+     * 
+     * @param {*} requestXml 
+     * @param {*} envelope 
+     */
+    updateSetXmlWS: function (requestXml, envelope) {
+        var self = this;
+
+
+        var payload = gs.xmlToJSON(requestXml);
+        var body = payload['SOAP-ENV:Envelope']['SOAP-ENV:Body'];
+
+        var funcName = Object.keys(body)[0];
+        var commitId;
+        var resp = (function () {
+            if (envelope) {
+                var env = new XMLDocument(envelope);
+                env.setCurrent(env.getElementByTagName('SOAP-ENV:Body'));
+                env.setCurrent(env.createElement(funcName + 'Response'));
+                return env;
+            } else {
+                return new XMLDocument("<" + funcName + "Response/>");
+            }
+        })();
+
+        if ('getKeys' == funcName) {
+            var sysId = body['getKeys']['update_set'];
+            commitId = self._preference.get(sysId);
+            self._preference.del(sysId);
+
+            var aggregate = self._getUpdateSetXmlCount(commitId);
+            /*
+                as the update-set sysId (commitId) is not sent to the XML api we 
+                have to keep it. unfortunately the client is not session aware, so put it into user prop..
+            */
+            self._chunkArray(aggregate.sys_id.split(','), 250).forEach(function (page, index) {
+                var md5 = new GlideChecksum(page.join(',')).getMD5();
+                self._preference.set(md5, commitId);
+                //self.console.log('SAVE TO SESSION:  - md5: ' + md5 + ' sysId: ' + commitId);
+            });
+
+
+            resp.createElement("count", aggregate.count);
+            resp.createElement("sys_id", aggregate.sys_id);
+
+        } else if ('getRecords' == funcName) {
+
+            body = body['getRecords'];
+            var query = body['__encoded_query'];
+            var xmlSysIds = null;
+            if (query) {
+                var match = query.match(/^sys_idIN(.*)$/i);
+                if (match && match[1]) {
+                    xmlSysIds = match[1];
+                }
+            }
+            if (!xmlSysIds)
+                throw "No sys_id found in query";
+
+            /*
+                get the commitId form the user prefs and delete it later.
+            */
+            var md5 = new GlideChecksum(xmlSysIds).getMD5();
+            commitId = self._preference.get(md5);
+
+            self._preference.del(md5);
+
+            //self.console.log("GET FROM SESSION. md5 " + md5 + ", sysid: " + commitId);
+            //self.console.log("update-set sysId " + commitId);
+            //self.console.log('XML QUERY ' + JSON.stringify(body));
+
+            //resp = new XMLDocument("<" + funcName + "Response>" + self._getUpdateSetXml(commitId, xmlSysIds) + "</" + funcName + "Response>");
+            if (envelope) {
+                resp = new XMLDocument(envelope.replace("<SOAP-ENV:Body></SOAP-ENV:Body>", "<SOAP-ENV:Body><" + funcName + "Response>" + self._getUpdateSetXml(commitId, xmlSysIds) + "</" + funcName + "Response></SOAP-ENV:Body>"));
+            } else {
+                resp = new XMLDocument("<" + funcName + "Response>" + self._getUpdateSetXml(commitId, xmlSysIds) + "</" + funcName + "Response>");
+            }
+        }
+
+        //self.console.log('updateSetXmlWS ' + resp.toIndentedString());
+        return resp;
+
+    },
+
 
     /**
      * UpdateSet XML SOAP Web Service Endpoint
@@ -549,73 +736,14 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
     updateSetXmlSoapWebService: function (requestXml, response) {
         var self = this;
         try {
-
-            this.checkAccess();
-
-            var payload = gs.xmlToJSON(requestXml);
-            var body = payload['SOAP-ENV:Envelope']['SOAP-ENV:Body'];
-
-            var funcName = Object.keys(body)[0];
-
-
-            if ('getKeys' == funcName) {
-                var sysId = body['getKeys']['update_set'];
-                var commitId = self._preference.get(sysId);
-                self._preference.del(sysId);
-
-                var aggregate = self._getUpdateSetXmlCount(commitId);
-                /*
-                    as the update-set sysId (commitId) is not sent to the XML api we 
-                    have to keep it. unfortunately the client is not session aware, so put it into user prop..
-                */
-                self._chunkArray(aggregate.sys_id.split(','), 250).forEach(function (page, index) {
-                    var md5 = new GlideChecksum(page.join(',')).getMD5();
-                    self._preference.set(md5, commitId);
-                    //self.console.log('SAVE TO SESSION:  - md5: ' + md5 + ' sysId: ' + commitId);
-                });
-
-                var resp = new XMLDocument("<" + funcName + "Response/>");
-                resp.createElement("count", aggregate.count);
-                resp.createElement("sys_id", aggregate.sys_id);
-                response.soapResponseElement = resp.getDocumentElement();
-                return;
-
-            } else if ('getRecords' == funcName) {
-
-                var body = body['getRecords'];
-                var query = body['__encoded_query'];
-                var xmlSysIds = null;
-                if (query) {
-                    var match = query.match(/^sys_idIN(.*)$/i);
-                    if (match && match[1]) {
-                        xmlSysIds = match[1];
-                    }
-                }
-                if (!xmlSysIds)
-                    throw "No sys_id found in query";
-
-                /*
-                    get the commitId form the user prefs and delete it later.
-                */
-                var md5 = new GlideChecksum(xmlSysIds).getMD5();
-                var commitId = self._preference.get(md5);
-
-                self._preference.del(md5);
-
-                //self.console.log("GET FROM SESSION. md5 " + md5 + ", sysid: " + commitId);
-                //self.console.log("update-set sysId " + commitId);
-                //self.console.log('XML QUERY ' + JSON.stringify(body));
-
-                var resp = new XMLDocument("<" + funcName + "Response>" + self._getUpdateSetXml(commitId, xmlSysIds) + "</" + funcName + "Response>");
-                response.soapResponseElement = resp.getDocumentElement();
-                return;
-            }
-
+            self.checkAccess();
+            response.soapResponseElement = self.updateSetXmlWS(requestXml).getDocumentElement();
         } catch (e) {
             self.console.error('updateSetXmlSoapWebService ' + e);
             response.e = e;
         }
     },
+
 
     /**
      * Connect to CICD Server and get the aggregate information about the update-set-xml records
@@ -628,7 +756,7 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
         var request = new sn_ws.RESTMessageV2();
         if (self.settings.throughMidServer) {
             if (gs.nil(self.settings.midServerName))
-                throw 'MID Server not defined';
+                throw 'no running MID server available';
             request.setMIDServer(self.settings.midServerName);
         }
 
@@ -670,7 +798,7 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
         var request = new sn_ws.RESTMessageV2();
         if (self.settings.throughMidServer) {
             if (gs.nil(self.settings.midServerName))
-                throw 'MID Server not defined';
+                throw 'no running MID server available';
             request.setMIDServer(self.settings.midServerName);
         }
 
@@ -716,6 +844,7 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
         var name = null;
         var mid = new GlideRecord('ecc_agent');
         mid.addQuery('status', 'Up');
+        mid.addQuery('validated', 'true');
         mid.setLimit(1);
         mid.query();
         if (mid._next()) {
