@@ -124,9 +124,9 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
      */
     getAppVersion: function () {
         var self = this;
-        var gr = new GlideRecord('sys_app');
+        var gr = new GlideRecord('sys_scope');
         if (gr.get(self.CICD_INTEGRATION_APP_ID)) {
-            return gr.getValue('version').split('.')
+            return gr.getValue('version').split('.');
         }
         return [0, 0, 0];
     },
