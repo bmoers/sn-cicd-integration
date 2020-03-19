@@ -58,6 +58,19 @@ const clean = function () {
 };
 
 const updateSet = function () {
+
+    if (!process.env.REPLACE_USER)
+        throw Error('process.env.REPLACE_USER not defined');
+
+    if (!process.env.REPLACE_COMPANY)
+        throw Error('process.env.REPLACE_COMPANY not defined');
+
+    if (!process.env.REPLACE_NAMESPACE)
+        throw Error('process.env.REPLACE_NAMESPACE not defined');
+
+    if (!process.env.REPLACE_SECRET)
+        throw Error('process.env.REPLACE_SECRET not defined');
+
     return gulp.src('original/sys_remote_update_set_*.xml')
         .pipe(replace(new RegExp(process.env.REPLACE_COMPANY, 'ig'), 'company'))
         .pipe(replace(`<namespace>${process.env.REPLACE_NAMESPACE || 'devops'}</namespace>`, '<namespace>devops</namespace>'))
@@ -74,7 +87,7 @@ const updateSet = function () {
         .pipe(replace(/<(u_[^\/>]*)\/>/g, ''))
         .pipe(replace(/<(u_[^\s\/>]*)[^>]*>.*<\/(\1)>/g, ''))
 
-        .pipe(replace(new RegExp(process.env.USERNAME, 'ig'), 'b.moers'))
+        .pipe(replace(new RegExp(process.env.REPLACE_USER, 'ig'), 'b.moers'))
         .pipe(rename({
             basename: "CICD Integration"
         }))
@@ -82,10 +95,17 @@ const updateSet = function () {
 };
 
 const script = function () {
+
+    if (!process.env.REPLACE_USER)
+        throw Error('process.env.REPLACE_USER not defined');
+
+    if (!process.env.REPLACE_NAMESPACE)
+        throw Error('process.env.REPLACE_NAMESPACE not defined');
+
     var paths = ['script_include/**/*.js', 'processor/**/*.js'];
     return gulp.src(paths, { base: "./" })
         .pipe(using({}))
-        .pipe(replace(new RegExp(process.env.USERNAME, 'ig'), 'b.moers'))
+        .pipe(replace(new RegExp(process.env.REPLACE_USER, 'ig'), 'b.moers'))
         .pipe(replace(`/${process.env.REPLACE_NAMESPACE}/`, '/devops/'))
         .pipe(gulp.dest('./'));
 };
