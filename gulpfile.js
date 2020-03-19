@@ -58,6 +58,7 @@ const clean = function () {
 };
 
 const updateSet = function () {
+
     if (!process.env.REPLACE_USER)
         throw Error('process.env.REPLACE_USER not defined');
 
@@ -94,10 +95,17 @@ const updateSet = function () {
 };
 
 const script = function () {
+
+    if (!process.env.REPLACE_USER)
+        throw Error('process.env.REPLACE_USER not defined');
+
+    if (!process.env.REPLACE_NAMESPACE)
+        throw Error('process.env.REPLACE_NAMESPACE not defined');
+
     var paths = ['script_include/**/*.js', 'processor/**/*.js'];
     return gulp.src(paths, { base: "./" })
         .pipe(using({}))
-        .pipe(replace(new RegExp(process.env.USERNAME, 'ig'), 'b.moers'))
+        .pipe(replace(new RegExp(process.env.REPLACE_USER, 'ig'), 'b.moers'))
         .pipe(replace(`/${process.env.REPLACE_NAMESPACE}/`, '/devops/'))
         .pipe(gulp.dest('./'));
 };
