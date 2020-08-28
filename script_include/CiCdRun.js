@@ -104,9 +104,18 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
             cicdBuildStateMessageEnabled: Boolean(gs.getProperty('cicd-integration.message.build-state', 'false') == 'true'),
             throughMidServer: Boolean(gs.getProperty('cicd-integration.server.through-mid', 'false') == 'true'),
             midServerName: gs.getProperty('cicd-integration.server.mid-server-name', self.getMidServer()),
+
+            showRepositoryField: Boolean(gs.getProperty('cicd-integration.show.repository-field', 'false') == 'true'),
+
+            noMultiScopeUpdateSet: Boolean(gs.getProperty('cicd-integration.prevent.no-multi-scope-update-set', 'false') == 'true'),
+            addSysAppToUpdateSet: Boolean(gs.getProperty('cicd-integration.prevent.add-sys-app-to-update-set', 'false') == 'true'),
+
             cicdServerRunURL: cicdServer.concat('/run'),
             cicdServerPreviewCompleteURL: cicdServer.concat('/preview-complete'),
             cicdServerDeploymentCompleteURL: cicdServer.concat('/deployment-complete'),
+
+            companyCode: gs.getProperty('glide.appcreator.company.code') //x_<company_code>
+
         }, JSON.parse(JSON.stringify(settings || {})));
     },
 
@@ -269,17 +278,121 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
         }
 
         if (current.state.changesTo('complete')) {
+
+            var repository = '',
+                id = '',
+                name = '';
+
+            // this is an update set of a global app or a simple global update set
+            if (current.application.scope.toString().toLowerCase() == 'global') {
+
+                // check if the update_set_xml records are all of the same application
+                var agg = new GlideAggregate('sys_update_xml');
+                agg.addQuery('update_set', current.getValue('sys_id'))
+                agg.addAggregate('COUNT', 'application');
+                agg.orderBy('application');
+                agg.query();
+
+                var scopes = [];
+
+                while (agg.next()) {
+                    scopes.push({ 
+                        name: agg.getDisplayValue('application'), 
+                        repository: agg.application.u_repository.toString(), 
+                        id: agg.getValue('application'), 
+                        num: agg.getAggregate('COUNT', 'application') 
+                    });
+                }
+
+                if (scopes.length == 0) {
+                    gs.addErrorMessage('This update set contains no customer updates. Please add at least one change.');
+                    current.state.setValue(prevState);
+                    return current.setAbortAction(true);
+                }
+
+                if (self.settings.noMultiScopeUpdateSet && scopes.length > 1) {
+                    var apps = scopes.map(function (scope) { return '\''.concat(scope.name, ' (' + scope.num + ')', '\'') }).join(', ');
+                    gs.addErrorMessage('This update set has customer updates of multiple scopes ' + apps + '. Please ensure this update set has one scope only.');
+                    current.state.setValue(prevState);
+                    return current.setAbortAction(true);
+                }
+
+                repository = scopes[0].repository || scopes[0].name;
+                id = scopes[0].id;
+                name = scopes[0].name;
+
+            } else {
+                // scoped application
+                repository = current.application.u_repository.toString() || current.application.scope.toString();
+                id = current.getValue('application');
+                name = current.getDisplayValue('application');
+            }
+
+            // auto add sys_app to the update set
+            if (self.settings.addSysAppToUpdateSet) {
+
+                var updateSetSysId = current.getValue('sys_id');
+
+                var gr = new GlideRecord('sys_update_xml');
+                gr.addQuery('update_set', updateSetSysId)
+                gr.addQuery('name', 'sys_app_'.concat(id))
+                gr.setLimit(1);
+                gr.query();
+                if (!gr.next()) {
+
+                    var sc = new GlideRecord('sys_app');
+                    if (!sc.get(id))
+                        throw Error("application not found");
+
+
+                    var us = new GlideRecord('sys_update_set');
+                    if(!us.get(updateSetSysId))
+                        throw Error("update set not found");
+
+                    var prev = us.getValue('state');
+
+                    // set the update set to in progress again
+                    us.setWorkflow(false);
+                    us.setValue('state', 'in progress');
+                    us.update();
+                
+                    var gus = new GlideUpdateSet();
+
+                    // save the current active update set for later
+                    var currentUS = gus.get();
+
+                    // make the update set active
+                    gus.set(us.getValue('sys_id'));
+                    
+                    var usm = new GlideUpdateManager2();
+                    // add the app to the update set
+                    usm.saveRecord(sc);
+                
+                    // make the update set as it was before
+                    us.setValue('state', prev);
+                    us.update();
+                    
+                    // and make the previous update set active again
+                    if (gus.get().toString() != currentUS) {
+                        gus.set(currentUS);
+                    }
+
+                    gs.addInfoMessage('The application record was automatically added to this update set');
+
+                }
+            }
+
             try {
                 // CICD enabled, run 
                 current.setValue('state', 'build');
                 self.now({
                     updateSet: current.getValue('sys_id'),            // the update set to send to the pipeline
                     application: {
-                        id: current.getValue('application'),          // the id of the scope (or any other container grouping the application)
-                        name: current.getDisplayValue('application')  // the name of the application
+                        id: id,          // the id of the scope (or any other container grouping the application)
+                        name: name  // the name of the application
                     },
                     git: {
-                        repository: ((current.application.scope.toString() == 'global') ? current.getDisplayValue('application') : current.application.scope.toString()).toLowerCase().replace(/\s+/g, '_') // assuming the git repo shares the name with the scoped app
+                        repository: repository.toLowerCase().replace(/[^\w]/g, ' ').replace(/\s+/g, '_') // assuming the git repo shares the name with the scoped app
                     }
                 });
             } catch (e) {
@@ -355,6 +468,8 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
      */
     sys_app_Display: function (currentSysApp) {
         var self = this;
+
+        g_scratchpad.settings = self.settings
 
         if (!self.settings.cicdEnabled)
             return;
@@ -676,7 +791,7 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
         var request = new sn_ws.RESTMessageV2();
         if (self.settings.throughMidServer) {
             if (gs.nil(self.settings.midServerName))
-                throw '[previewComplete] MID Server not defined';
+                throw '[deploymentComplete] MID Server not defined';
             request.setMIDServer(self.settings.midServerName);
         }
 
