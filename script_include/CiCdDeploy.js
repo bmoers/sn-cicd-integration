@@ -523,6 +523,7 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
                 */
                 var responseBody = JSON.parse(response.getBody()).result;
                 var payload = {
+                    // TODO: self.getAppVersion() not specified !
                     version: self.getAppVersion(),
                     sourceSysId: responseBody.sourceSysId,
                     targetEnvironment: responseBody.targetEnvironment,

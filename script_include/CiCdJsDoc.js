@@ -6,7 +6,7 @@
  * @memberof global.module:sys_script_include
  */
 var CiCdJsDoc = Class.create();
-CiCdJsDoc.prototype = /** @lends global.module:sys_script_include.CiCdJsDoc.prototype */ {
+CiCdJsDoc.prototype = /** @lends global.module:sys_script_include.CiCdJsDoc.prototype */ { 
     /**
      * Constructor
      * 
