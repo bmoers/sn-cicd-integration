@@ -861,7 +861,11 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
                             continue;
 
                         self.console.log('[Conflict Default Resolution Skip] Setting {0} to status \'skipped\'', skipProb.remote_update.getDisplayValue());
-                        skipProb.setValue('status', 'skipped');
+
+                        //skipProb.setValue('status', 'skipped');
+                        var ppa = new GlidePreviewProblemAction(new GlideAction(), skipProb);
+                        ppa.skipUpdate(); // Problem has been skipped. The update that caused this problem will not be committed.
+
                         skipProb.setValue('description', '[CICD] - This issue was automatically SKIPPED by the CICD process (CICD_CD_DEPLOY_ALWAYS_SKIP_CONFLICTS)\n'.concat(skipProb.getValue('description')));
                         skipProb.update();
                     }
@@ -890,7 +894,11 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
                             continue;
 
                         self.console.log('[Conflict Default Resolution Ignore] Setting {0} to status \'ignored\'', ignProb.remote_update.getDisplayValue());
-                        ignProb.setValue('status', 'ignored');
+
+                        //ignProb.setValue('status', 'ignored');
+                        var ppa = new GlidePreviewProblemAction(new GlideAction(), ignProb);
+                        ppa.ignoreProblem(); // Problem has been ignored
+
                         ignProb.setValue('description', '[CICD] - This issue was automatically IGNORED by the CICD process (CICD_CD_DEPLOY_ALWAYS_IGNORE_CONFLICTS)\n'.concat(ignProb.getValue('description')));
                         ignProb.update();
                     }
@@ -939,9 +947,14 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
                         if (status == 'skipped') {// skipped = 'Skip remote update'
                             // this change can be ignored
                             self.console.log('[Auto Conflict resolution] set this record to "SKIPPED" : {0}', gs.getProperty('glide.servlet.uri').concat(problem.getLink(true)));
-                            problem.setValue('status', status);
+                            
+                            //problem.setValue('status', status);
+                            var ppa = new GlidePreviewProblemAction(new GlideAction(), problem);
+                            ppa.skipUpdate(); // Problem has been skipped. The update that caused this problem will not be committed.
+
                             problem.setValue('description', '[CICD] - This issue was automatically SKIPPED by the CICD process (based on preflight conflict resolution)\n'.concat(problem.getValue('description')));
                             problem.update();
+                            
                         } else if (status == 'ignored') { // ignored = 'Accept remote update'
                             // check if the local record is by any chance newer than the one we should accept
                             // this can be the case if there was another deployment to target from another dev environment
@@ -973,7 +986,11 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
 
                                 // this change can be accepted
                                 self.console.log('[Auto Conflict resolution] set this record to "IGNORED" : {0}', gs.getProperty('glide.servlet.uri').concat(problem.getLink(true)));
-                                problem.setValue('status', status);
+                                
+                                //problem.setValue('status', status);
+                                var ppa = new GlidePreviewProblemAction(new GlideAction(), problem);
+                                ppa.ignoreProblem(); // Problem has been ignored
+
                                 problem.setValue('description', '[CICD] - This issue was automatically IGNORED by the CICD process (based on preflight conflict resolution)\n'.concat(problem.getValue('description')));
                                 problem.update();
                             }
