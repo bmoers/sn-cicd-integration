@@ -243,6 +243,135 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
         }
     },
 
+    /**
+     * Get the scope of the updates set. In case of global the scope is derived from the customer updates.
+     * 
+     * @param {GlideRecord} current the update set
+     * @returns {Object} the scope of the current update set
+     */
+    getApplicationFromUpdateSetScope: function (current) {
+        var self = this;
+
+        var sanitizeRepo = function (name) {
+            return name.toLowerCase().replace(/[^\w]/g, ' ').replace(/\s+/g, '_')
+        }
+
+        if (current.application.scope.toString().toLowerCase() != 'global') {
+            return {
+                repository: sanitizeRepo(current.application.getRefRecord().isValidField('u_repository') ? current.application.u_repository.toString() || current.application.scope.toString() : current.application.scope.toString()),
+                id: current.getValue('application'),
+                name: current.getDisplayValue('application'),
+            }
+        }
+
+        /*
+            The update set of Global scoped applications is also in the global scope
+            the only way of identifying the scope is checking the customer updates in the update set.
+        */
+       
+        // check if the update_set_xml records are all of the same application
+        var agg = new GlideAggregate('sys_update_xml');
+        agg.addQuery('update_set', current.getValue('sys_id'))
+        agg.addAggregate('COUNT', 'application');
+        agg.orderBy('application');
+        agg.query();
+
+        var scopes = [];
+
+        while (agg.next()) {
+            scopes.push({
+                name: agg.getDisplayValue('application'),
+                repository: agg.application.getRefRecord().isValidField('u_repository') ? agg.application.u_repository.toString() : undefined,
+                id: agg.getValue('application'),
+                num: agg.getAggregate('COUNT', 'application')
+            });
+        }
+
+        if (scopes.length == 0) {
+            gs.addErrorMessage('This update set contains no customer updates. Please add at least one change.');
+            current.state.setValue(prevState);
+            return current.setAbortAction(true);
+        }
+
+        if (self.settings.noMultiScopeUpdateSet && scopes.length > 1) {
+            var apps = scopes.map(function (scope) { return '\''.concat(scope.name, ' (' + scope.num + ')', '\'') }).join(', ');
+            gs.addErrorMessage('This update set has customer updates of multiple scopes ' + apps + '. Please ensure this update set has one scope only.');
+            current.state.setValue(prevState);
+            return current.setAbortAction(true);
+        }
+
+        var scope = scopes[0];
+        return {
+            repository: sanitizeRepo(scope.repository || scope.name),
+            id: scope.id,
+            name: scope.name
+        }
+    },
+
+    /**
+     * Add the application record (sys_app) to the current update set
+     * @param {GlideRecord} current the update set
+     * @param {GlideRecord} application the application
+     */
+    addApplicationToUpdateSet: function (current, application) {
+        var self = this;
+
+        // auto add sys_app to the update set
+        if (self.settings.addSysAppToUpdateSet) {
+
+            var updateSetSysId = current.getValue('sys_id');
+            var applicationSysId = application.getValue('sys_id');
+
+            var us = new GlideRecord('sys_update_set');
+            if (!us.get(updateSetSysId))
+                throw Error("update set not found");
+
+            var sc = new GlideRecord('sys_app');
+            if (!sc.get(applicationSysId))
+                throw Error("application not found");
+
+            var gr = new GlideRecord('sys_update_xml');
+            gr.addQuery('update_set', updateSetSysId)
+            gr.addQuery('name', 'sys_app_'.concat(applicationSysId))
+            gr.setLimit(1);
+            gr.query();
+            if (!gr.next()) {
+
+                // keep the current state for later
+                var prev = us.getValue('state');
+
+                // set the update set to in progress again
+                us.setWorkflow(false);
+                us.setValue('state', 'in progress');
+                us.update();
+
+                var gus = new GlideUpdateSet();
+
+                // save the current active update set for later
+                var currentUS = gus.get();
+
+                // make the update set active
+                gus.set(us.getValue('sys_id'));
+
+                var usm = new GlideUpdateManager2();
+                // add the app to the update set
+                usm.saveRecord(sc);
+
+                // make the update set as it was before
+                us.setValue('state', prev);
+                us.update();
+
+                // and make the previous update set active again
+                if (gus.get().toString() != currentUS) {
+                    gus.set(currentUS);
+                }
+
+                gs.addInfoMessage('The application record was automatically added to this update set');
+
+            }
+        }
+    },
+
 
     /**
      * Example implementation of a Business-Rule to trigger the CICD Pipeline
@@ -279,120 +408,28 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
 
         if (current.state.changesTo('complete')) {
 
-            var repository = '',
-                id = '',
-                name = '';
+            // extract the application details from the update set 
+            var appDetails = self.getApplicationFromUpdateSetScope(current);
 
-            // this is an update set of a global app or a simple global update set
-            if (current.application.scope.toString().toLowerCase() == 'global') {
+            var app = new GlideRecord('sys_app');
+            if (!appDetails.id || !app.get(appDetails.id))
+                throw Error("application not found "+ appDetails.id);
 
-                // check if the update_set_xml records are all of the same application
-                var agg = new GlideAggregate('sys_update_xml');
-                agg.addQuery('update_set', current.getValue('sys_id'))
-                agg.addAggregate('COUNT', 'application');
-                agg.orderBy('application');
-                agg.query();
-
-                var scopes = [];
-
-                while (agg.next()) {
-                    scopes.push({ 
-                        name: agg.getDisplayValue('application'), 
-                        repository: agg.application.u_repository.toString(), 
-                        id: agg.getValue('application'), 
-                        num: agg.getAggregate('COUNT', 'application') 
-                    });
-                }
-
-                if (scopes.length == 0) {
-                    gs.addErrorMessage('This update set contains no customer updates. Please add at least one change.');
-                    current.state.setValue(prevState);
-                    return current.setAbortAction(true);
-                }
-
-                if (self.settings.noMultiScopeUpdateSet && scopes.length > 1) {
-                    var apps = scopes.map(function (scope) { return '\''.concat(scope.name, ' (' + scope.num + ')', '\'') }).join(', ');
-                    gs.addErrorMessage('This update set has customer updates of multiple scopes ' + apps + '. Please ensure this update set has one scope only.');
-                    current.state.setValue(prevState);
-                    return current.setAbortAction(true);
-                }
-
-                repository = scopes[0].repository || scopes[0].name;
-                id = scopes[0].id;
-                name = scopes[0].name;
-
-            } else {
-                // scoped application
-                repository = current.application.u_repository.toString() || current.application.scope.toString();
-                id = current.getValue('application');
-                name = current.getDisplayValue('application');
-            }
-
-            // auto add sys_app to the update set
-            if (self.settings.addSysAppToUpdateSet) {
-
-                var updateSetSysId = current.getValue('sys_id');
-
-                var gr = new GlideRecord('sys_update_xml');
-                gr.addQuery('update_set', updateSetSysId)
-                gr.addQuery('name', 'sys_app_'.concat(id))
-                gr.setLimit(1);
-                gr.query();
-                if (!gr.next()) {
-
-                    var sc = new GlideRecord('sys_app');
-                    if (!sc.get(id))
-                        throw Error("application not found");
-
-
-                    var us = new GlideRecord('sys_update_set');
-                    if(!us.get(updateSetSysId))
-                        throw Error("update set not found");
-
-                    var prev = us.getValue('state');
-
-                    // set the update set to in progress again
-                    us.setWorkflow(false);
-                    us.setValue('state', 'in progress');
-                    us.update();
-                
-                    var gus = new GlideUpdateSet();
-
-                    // save the current active update set for later
-                    var currentUS = gus.get();
-
-                    // make the update set active
-                    gus.set(us.getValue('sys_id'));
-                    
-                    var usm = new GlideUpdateManager2();
-                    // add the app to the update set
-                    usm.saveRecord(sc);
-                
-                    // make the update set as it was before
-                    us.setValue('state', prev);
-                    us.update();
-                    
-                    // and make the previous update set active again
-                    if (gus.get().toString() != currentUS) {
-                        gus.set(currentUS);
-                    }
-
-                    gs.addInfoMessage('The application record was automatically added to this update set');
-
-                }
-            }
+            // if required, add the application also to the update set
+            self.addApplicationToUpdateSet(current, app);
 
             try {
                 // CICD enabled, run 
                 current.setValue('state', 'build');
+                
                 self.now({
                     updateSet: current.getValue('sys_id'),            // the update set to send to the pipeline
                     application: {
-                        id: id,          // the id of the scope (or any other container grouping the application)
-                        name: name  // the name of the application
+                        id: appDetails.id,          // the id of the scope (or any other container grouping the application)
+                        name: appDetails.name  // the name of the application
                     },
                     git: {
-                        repository: repository.toLowerCase().replace(/[^\w]/g, ' ').replace(/\s+/g, '_') // assuming the git repo shares the name with the scoped app
+                        repository: appDetails.repository // assuming the git repo shares the name with the scoped app
                     }
                 });
             } catch (e) {
@@ -869,6 +906,9 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
             },
             target: {
                 name: null                      // the target system to deploy the update set e.g. https://companytest.service-now.com
+            },
+            preflight: {
+                name: null                      // [optional] the system to be used in the preflight phase e.g. https://companytest.service-now.com
             }
         }, JSON.parse(JSON.stringify(opts || {})));
 
