@@ -340,15 +340,20 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
             autoCreateCdUser = ('true' == gs.getProperty('cicd-integration.auto-create-cd-user', 'false'));
 
             var targetMatch = targetEnvironment.match(/(?:http[s]?:\/\/)([^\.]*)([^:\/]*)/i);
-            if (!targetMatch || targetMatch[2] !== '.service-now.com') // protect from sending credentials with high privileges to a non service-now.com host
-                throw Error('invalid host');
+            if (!targetMatch || !targetMatch[1] || !targetMatch[2]) 
+                throw Error('invalid target host');
 
             var sourceMatch = sourceEnvironment.match(/(?:http[s]?:\/\/)([^\.]*)([^:\/]*)/i);
-            if (!sourceMatch || !targetMatch[1])
-                throw Error('invalid host');
+            if (!sourceMatch || !sourceMatch[1] || !sourceMatch[2])
+                throw Error('invalid source host');
 
             if (sourceMatch[1] == targetMatch[1])
                 throw Error('source and target can not be same');
+
+            // protect from sending credentials with high privileges to a non service-now.com host
+            if (sourceMatch[2] != targetMatch[2]){
+                throw Error('invalid hosts');
+            }
 
             // updateSetSysId = the sys_id of the source update set
             // commitId = the id to load the update set
