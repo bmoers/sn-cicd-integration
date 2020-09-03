@@ -244,18 +244,44 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
     },
 
     /**
+     * Ensure the update set state is not changed back during a CICD run
+     * 
+     * @param {GlideRecord} current 
+     */
+    isUpdateSetStateChangeValid: function (current, previous){
+        var self = this;
+
+        if(!current)
+            return false;
+
+        var state = current.getValue('state');
+        var prevState = previous.getValue('state');
+
+        // don't allow user to change the state during a CICD run
+        // except to 'Do not transport' and 'ignore'
+        if (current.state.changes() && !current.state.changesTo('Do not transport') && !current.state.changesTo('ignore') && self.PROTECTED_STATES.indexOf(prevState) != -1) {
+            gs.addErrorMessage('You can\'t manually change the state from \'' + prevState + '\' to \'' + state + '\'');
+            current.state.setValue(prevState);
+            current.setAbortAction(true);
+            return false;
+        }
+
+        return true;
+    },
+
+    /**
      * Get the scope of the updates set. In case of global the scope is derived from the customer updates.
      * 
      * @param {GlideRecord} current the update set
      * @returns {Object} the scope of the current update set
      */
-    getApplicationFromUpdateSetScope: function (current) {
+    getApplicationFromUpdateSetScope: function (current, previous) {
         var self = this;
 
         var sanitizeRepo = function (name) {
-            return name.toLowerCase().replace(/[^\w]/g, ' ').replace(/\s+/g, '_')
+            return name.toLowerCase().replace(/[^\w]/g, ' ').replace(/\s+/g, '_').replace(/^_+|_+$/g, '');
         }
-
+        
         if (current.application.scope.toString().toLowerCase() != 'global') {
             return {
                 repository: sanitizeRepo(current.application.getRefRecord().isValidField('u_repository') ? current.application.u_repository.toString() || current.application.scope.toString() : current.application.scope.toString()),
@@ -263,6 +289,8 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
                 name: current.getDisplayValue('application'),
             }
         }
+
+        var prevState = previous.getValue('state');
 
         /*
             The update set of Global scoped applications is also in the global scope
@@ -290,14 +318,16 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
         if (scopes.length == 0) {
             gs.addErrorMessage('This update set contains no customer updates. Please add at least one change.');
             current.state.setValue(prevState);
-            return current.setAbortAction(true);
+            current.setAbortAction(true);
+            return false;
         }
 
         if (self.settings.noMultiScopeUpdateSet && scopes.length > 1) {
             var apps = scopes.map(function (scope) { return '\''.concat(scope.name, ' (' + scope.num + ')', '\'') }).join(', ');
             gs.addErrorMessage('This update set has customer updates of multiple scopes ' + apps + '. Please ensure this update set has one scope only.');
             current.state.setValue(prevState);
-            return current.setAbortAction(true);
+            current.setAbortAction(true);
+            return false;
         }
 
         var scope = scopes[0];
@@ -395,21 +425,17 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
         if (!gs.isInteractive())
             return;
 
-        var state = current.getValue('state');
-        var prevState = previous.getValue('state');
-
         // don't allow user to change the state during a CICD run
-        // except to 'Do not transport' and 'ignore'
-        if (current.state.changes() && !current.state.changesTo('Do not transport') && !current.state.changesTo('ignore') && self.PROTECTED_STATES.indexOf(prevState) != -1) {
-            gs.addErrorMessage('You can\'t manually change the state from \'' + prevState + '\' to \'' + state + '\'');
-            current.state.setValue(prevState);
-            return current.setAbortAction(true);
-        }
+        var valid = self.isUpdateSetStateChangeValid(current, previous);
+        if(!valid)
+            return;
 
         if (current.state.changesTo('complete')) {
 
             // extract the application details from the update set 
-            var appDetails = self.getApplicationFromUpdateSetScope(current);
+            var appDetails = self.getApplicationFromUpdateSetScope(current, previous);
+            if(!appDetails)
+                return;
 
             var app = new GlideRecord('sys_app');
             if (!appDetails.id || !app.get(appDetails.id))
@@ -423,13 +449,13 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
                 current.setValue('state', 'build');
                 
                 self.now({
-                    updateSet: current.getValue('sys_id'),            // the update set to send to the pipeline
+                    updateSet: current.getValue('sys_id'), // the update set to send to the pipeline
                     application: {
-                        id: appDetails.id,          // the id of the scope (or any other container grouping the application)
-                        name: appDetails.name  // the name of the application
+                        id: appDetails.id,                 // the id of the scope (or any other container grouping the application)
+                        name: appDetails.name              // the name of the application
                     },
                     git: {
-                        repository: appDetails.repository // assuming the git repo shares the name with the scoped app
+                        repository: appDetails.repository
                     }
                 });
             } catch (e) {
@@ -551,16 +577,26 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
 
             gs.addInfoMessage('Application exported as <a href="/sys_update_set.do?sys_id=' + scopedUpdateSet.updateSetSysId + '">update set</a>. CICD Process started.')
 
+            var us = new GlideRecord('sys_update_set');
+            if(!us.get(scopedUpdateSet.updateSetSysId))
+                throw Error("update set creation failed");
+
+            // extract the application details from the update set 
+            var appDetails = self.getApplicationFromUpdateSetScope(us);
+            if(!appDetails)
+                throw Error("application details not found");
+
             self.now({
                 updateSet: scopedUpdateSet.updateSetSysId,
                 application: {
-                    id: currentSysApp.getValue('sys_id'), // the id of the application
-                    name: currentSysApp.getValue('name')  // the name of the application
+                    id: appDetails.id,     // the id of the scope (or any other container grouping the application)
+                    name: appDetails.name  // the name of the application
                 },
                 git: {
-                    repository: ((currentSysApp.getValue('scope') == 'global') ? currentSysApp.getValue('name') : currentSysApp.getValue('scope')).toLowerCase().replace(/\s+/g, '_') // assuming the git repo shares the name with the scoped app
+                    repository: appDetails.repository
                 }
             });
+
         } catch (e) {
 
             if (e.code == "ALREADY_RUNNING") {

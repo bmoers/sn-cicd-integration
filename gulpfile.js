@@ -82,15 +82,19 @@ const updateSet = function () {
         .pipe(replace(/(<name>cicd-integration\.enabled\.on-update-set<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>false</value>'))
         .pipe(replace(/(<name>cicd-integration\.message\.build-state<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>false</value>'))
         .pipe(replace(/(<name>cicd-integration\.server\.url<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>https://localhost:8443</value>'))
-        .pipe(replace(/(<name>cicd-integration\.server\.through-mid<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>true</value>'))
+        .pipe(replace(/(<name>cicd-integration\.server\.through-mid<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>true</value>'))        
+        .pipe(replace(/(<name>cicd-integration\.server\.mid-server-name<\/name>.*)<value>([^<]+)<\/value>/, '$1<value></value>'))
         .pipe(replace(/(<name>cicd-integration\.jsdocButton\.enabled<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>true</value>'))
-
         .pipe(replace(/(<name>cicd-integration\.show\.repository-field<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>false</value>'))
         .pipe(replace(/(<name>cicd-integration\.prevent\.add-sys-app-to-update-set<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>false</value>'))
         .pipe(replace(/(<name>cicd-integration\.prevent\.no-multi-scope-update-set<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>false</value>'))
+    
+        .pipe(replace(/(<name>cicd-integration\.pull-request-proxy\.enabled<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>false</value>'))
 
         .pipe(replace(/<(u_[^\/>]*)\/>/g, ''))
-        .pipe(replace(/<(u_[^\s\/>]*)[^>]*>.*<\/(\1)>/g, ''))
+        .pipe(replace(/<u_repository>cicd_integration<\/u_repository>/, '<u_repository/>'))
+        .pipe(replace(/<(u_(?!.*repository).*)[^>]*>.*<\/(\1)>/g, ''))
+        //.pipe(replace(/<(u_[^\s\/>]*)[^>]*>.*<\/(\1)>/g, ''))
 
         .pipe(replace(new RegExp(process.env.REPLACE_USER, 'ig'), 'b.moers'))
         .pipe(rename({
