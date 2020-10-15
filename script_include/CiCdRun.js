@@ -437,12 +437,10 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
             if(!appDetails)
                 return;
 
+            // if required, add custom application to the update set    
             var app = new GlideRecord('sys_app');
-            if (!appDetails.id || !app.get(appDetails.id))
-                throw Error("application not found "+ appDetails.id);
-
-            // if required, add the application also to the update set
-            self.addApplicationToUpdateSet(current, app);
+            if (app.get(appDetails.id))
+                self.addApplicationToUpdateSet(current, app);
 
             try {
                 // CICD enabled, run 
