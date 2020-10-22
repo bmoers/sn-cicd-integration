@@ -674,7 +674,7 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
 
             var lusSysId;
             var rus = new GlideRecord('sys_remote_update_set');
-            rus.addQuery('remote_sys_id', 'STARTSWITH', remoteSysId);
+            rus.addQuery('remote_sys_id', 'STARTSWITH', remoteSysId).addOrCondition('origin_sys_id', 'STARTSWITH', remoteSysId);
             rus._query();
             if (rus._next()) {
                 lusSysId = rus.getValue('update_set');
@@ -819,7 +819,7 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
             return self._sendLocation(202, payload);
         }
 
-        throw Error('Remote update-set not found with "remote_sys_id" ' + updateSetSysId);
+        throw Error('[Preview Update Set] Remote update-set not found with "remote_sys_id" ' + updateSetSysId);
     },
 
 
