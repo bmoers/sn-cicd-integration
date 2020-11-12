@@ -678,6 +678,9 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
             rus._query();
             if (rus._next()) {
                 lusSysId = rus.getValue('update_set');
+
+                self.console.info("[LOAD UPDATE SET] : deleting already loaded 'sys_remote_update_set' '{0}'", remoteSysId);
+                rus.deleteRecord();
             }
 
             var lus = new GlideRecord('sys_update_set');
@@ -700,13 +703,6 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
                 self.console.info("[LOAD UPDATE SET] : local update-set '{0}' was modified since deployment and will not be deleted.", lusSysId);
             }
 
-            if (lusSysId) {
-                self.console.info("[LOAD UPDATE SET] : deleting already loaded 'sys_remote_update_set' '{0}'", remoteSysId);
-                // delete the remote update set
-                rus.deleteRecord();
-            } else {
-                self.console.info("[LOAD UPDATE SET] : No already loaded 'sys_remote_update_set' found with id '{0}'", remoteSysId);
-            }
         });
 
         self.console.info("[LOAD UPDATE SET] : Source SYS_ID {0}", sourceSysId);
