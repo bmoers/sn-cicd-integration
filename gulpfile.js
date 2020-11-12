@@ -88,6 +88,7 @@ const updateSet = function () {
         .pipe(replace(/(<name>cicd-integration\.show\.repository-field<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>false</value>'))
         .pipe(replace(/(<name>cicd-integration\.prevent\.add-sys-app-to-update-set<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>false</value>'))
         .pipe(replace(/(<name>cicd-integration\.prevent\.no-multi-scope-update-set<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>false</value>'))
+        .pipe(replace(/(<name>cicd-integration\.ignore-delivery-conflicts<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>false</value>'))
     
         .pipe(replace(/(<name>cicd-integration\.pull-request-proxy\.enabled<\/name>.*)<value>([^<]+)<\/value>/, '$1<value>false</value>'))
 
