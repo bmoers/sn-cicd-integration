@@ -1069,16 +1069,27 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
                 }
             }
 
+
+            var ignoreDeliveryConflicts = ('true' == gs.getProperty('cicd-integration.ignore-delivery-conflicts', 'false'));
+            
             // in case of some issues exit here
             if (error.issues) {
-                self.response.setStatus(409);
-                // also send the payload back
-                error.payload = payload;
-                return self.response.setBody({
-                    code: 409,
-                    error: error,
-                    status: 'failure'
-                });
+                // incase of delivery AND ignore-delivery-conflicts, only log a warning, but pass
+                if(ignoreDeliveryConflicts && !payload.collisionDetect && !payload.deploy){
+                    self.console.warn("[COMMIT UPDATE SET] conflicts detected but ignored during delivery of /sys_remote_update_set.do?sys_id={0} ", payload.remoteUpdateSetSysId)
+                    // just incase: return the related errors
+                    payload.deliveryConflicts = error;
+
+                } else {
+                    self.response.setStatus(409);
+                    // also send the payload back
+                    error.payload = payload;
+                    return self.response.setBody({
+                        code: 409,
+                        error: error,
+                        status: 'failure'
+                    });
+                }
             }
 
             // only commit if 'deploy' is set
