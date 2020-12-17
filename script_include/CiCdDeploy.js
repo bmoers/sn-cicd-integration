@@ -175,12 +175,26 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
     },
 
 
+    /**
+     * Description
+     * 
+     * @param {any} updateSetSysId
+     * @returns {any} 
+     */
     _cloneUpdateSet: function (updateSetSysId) {
         var self = this;
+        /**
+         * Description
+         * 
+         * @param {any} sysId
+         * @param {any} parentSysId
+         * @param {any} batchBaseSysId
+         * @returns {undefined}
+         */
         var cloneUpdateSet = function (sysId, parentSysId, batchBaseSysId) {
             var us = new GlideRecord('sys_update_set');
             if (us.get(sysId)) {
-                self.console.info("cloning update set {0} with parent {1}", sysId, parentSysId);
+                self.console.log("cloning update set {0} with parent {1}", sysId, parentSysId);
 
                 us.setValue('name', '[CICD PREFLIGHT] - '.concat(us.getValue('name')));
                 us.setValue('description', 'This is the preflight copy of the update set \''.concat(sysId, '\' from \'', gs.getProperty('instance_name'), '\'.\nPlease do not deploy this update set.'));
@@ -225,9 +239,21 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
         return cloneUpdateSet(updateSetSysId);
     },
 
+    /**
+     * Description
+     * 
+     * @param {any} updateSetSysId
+     * @returns {boolean} 
+     */
     _deleteClone: function (updateSetSysId) {
         var self = this;
 
+        /**
+         * Description
+         * 
+         * @param {any} parentSysID
+         * @returns {undefined}
+         */
         var deleteDependentUpdateSet = function (parentSysID) {
             var bus = new GlideRecord('sys_update_set');
             bus.addQuery('name', 'STARTSWITH', '[CICD PREFLIGHT]');
@@ -340,7 +366,7 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
             autoCreateCdUser = ('true' == gs.getProperty('cicd-integration.auto-create-cd-user', 'false'));
 
             var targetMatch = targetEnvironment.match(/(?:http[s]?:\/\/)([^\.]*)([^:\/]*)/i);
-            if (!targetMatch || !targetMatch[1] || !targetMatch[2]) 
+            if (!targetMatch || !targetMatch[1] || !targetMatch[2])
                 throw Error('invalid target host');
 
             var sourceMatch = sourceEnvironment.match(/(?:http[s]?:\/\/)([^\.]*)([^:\/]*)/i);
@@ -351,7 +377,7 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
                 throw Error('source and target can not be same');
 
             // protect from sending credentials with high privileges to a non service-now.com host
-            if (sourceMatch[2] != targetMatch[2]){
+            if (sourceMatch[2] != targetMatch[2]) {
                 throw Error('invalid hosts');
             }
 
@@ -536,11 +562,13 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
                     updateSetSysId: updateSetSysId,
                     limitSet: limitSet, // <-- these are actually the US to be deployed
 
+                    gitDeployment: gitDeployment,
+
                     sourceEnvironment: sourceEnvironment,
                     deploy: Boolean(self.body.deploy),
                     collisionDetect: collisionDetect,
                     conflicts: self.body.conflicts,
-                    step: 'loadUpdateSet'
+                    step: gitDeployment ? 'aggregateUpdateSet' : 'loadUpdateSet'
 
                 };
                 return self._sendLocation(303, payload, targetEnvironment); // see other
@@ -617,12 +645,18 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
                             job still in progress, return not modified 304 and url to this resource.
                             */
                             return self._sendLocation(304, payload);
+                        } else {
+                            payload.trackerResult = pgr.getValue('result');
                         }
                     }
                 }
 
                 // here 'percent_complete' must be 100 (%) or no tracker in place
                 switch (payload.step) {
+
+                    case 'aggregateUpdateSet':
+                        return self._aggregateUpdateSet(payload);
+
                     case 'loadUpdateSet':
                         return self._targetLoadUpdateSet(payload);
 
@@ -650,6 +684,42 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
         }
     },
 
+    /**
+     * Count the UpdateSetXML records.
+     * The number is used later to validate the retrieved update set.
+     * 
+     * @param {*} payload
+     * @returns {any} 
+     */
+    _aggregateUpdateSet: function (payload) {
+        var self = this;
+        var progressId = undefined;
+
+        // only start the count if this is a git deployment
+        if (payload.gitDeployment) {
+
+            var worker = new GlideScriptedHierarchicalWorker();
+            worker.setProgressName("CICD - Aggregate UpdateSet");
+            worker.setScriptIncludeName("CiCdSource");
+            worker.setScriptIncludeMethod("aggregateUpdateSetWorker");
+            worker.putMethodArg("payload", payload);
+            worker.setBackground(true);
+            worker.start();
+
+            progressId = worker.getProgressID();
+            self.console.log("[AGGREGATE UPDATE SET] : GlideUpdateSetWorker progress_id: '{0}'", String(progressId));
+
+        }
+
+        self.assign(payload, {
+            progressId: progressId,
+            trackerResult: null,
+            step: 'loadUpdateSet'
+        });
+
+        // job create, return 'accepted'
+        return self._sendLocation(202, payload);
+    },
 
     /**
      * Load update set to target environment
@@ -659,6 +729,24 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
      */
     _targetLoadUpdateSet: function (payload) {
         var self = this;
+
+        if (payload.gitDeployment) {
+            payload.expectedUpdateSetXmlNum = -1;
+            if (payload.trackerResult) {
+                try {
+                    var count = JSON.parse(payload.trackerResult).count;
+                    payload.expectedUpdateSetXmlNum = count;
+                } catch (e){
+                    self.console.error(e);
+                    throw Error('UpdateSet Aggregation failed (JSON.parse(trackerResult))')
+                }
+            }
+            
+            if (payload.expectedUpdateSetXmlNum == -1)
+                throw Error('UpdateSet Aggregation failed (-1)')
+
+            self.console.log('[LOAD UPDATE SET] : ExpectedXml {0}', payload.expectedUpdateSetXmlNum);
+        }
 
         var sourceSysId = payload.sourceSysId,
             limitSet = (payload.limitSet) ? Array.isArray(payload.limitSet) ? payload.limitSet : [payload.limitSet] : [];
@@ -679,7 +767,7 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
             if (rus._next()) {
                 lusSysId = rus.getValue('update_set');
 
-                self.console.info("[LOAD UPDATE SET] : deleting already loaded 'sys_remote_update_set' '{0}'", remoteSysId);
+                self.console.log("[LOAD UPDATE SET] : deleting already loaded 'sys_remote_update_set' '{0}'", remoteSysId);
                 rus.deleteRecord();
             }
 
@@ -697,16 +785,16 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
             lus.addQuery('state', 'complete');
             lus._query();
             if (lus._next()) {
-                self.console.info("[LOAD UPDATE SET] : deleting local update-set '{0}'", lus.getValue('sys_id'));
+                self.console.log("[LOAD UPDATE SET] : deleting local update-set '{0}'", lus.getValue('sys_id'));
                 lus.deleteRecord();
             } else if (lusSysId) {
-                self.console.info("[LOAD UPDATE SET] : local update-set '{0}' was modified since deployment and will not be deleted.", lusSysId);
+                self.console.log("[LOAD UPDATE SET] : local update-set '{0}' was modified since deployment and will not be deleted.", lusSysId);
             }
 
         });
 
-        self.console.info("[LOAD UPDATE SET] : Source SYS_ID {0}", sourceSysId);
-        self.console.info("[LOAD UPDATE SET] : load update set {0}", limitSet);
+        self.console.log("[LOAD UPDATE SET] : Source SYS_ID {0}", sourceSysId);
+        self.console.log("[LOAD UPDATE SET] : load update set {0}", limitSet);
         /*
             run worker to load the update set from remote
         */
@@ -717,10 +805,11 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
         worker.start();
         var progressId = worker.getProgressID();
 
-        self.console.info("[LOAD UPDATE SET] : GlideUpdateSetWorker progress_id: '{0}'", String(progressId));
+        self.console.log("[LOAD UPDATE SET] : GlideUpdateSetWorker progress_id: '{0}'", String(progressId));
 
         self.assign(payload, {
             progressId: progressId,
+            trackerResult: null,
             step: 'previewUpdateSet'
         });
 
@@ -739,6 +828,47 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
         var self = this;
 
         var updateSetSysId = payload.updateSetSysId;
+
+        if (payload.gitDeployment) {
+            // make sure its an int
+            var expectedUpdateSetXmlNum = parseInt(payload.expectedUpdateSetXmlNum, 10);
+            var loadedUpdateSetXmlNum = 0;
+
+            if(isNaN(expectedUpdateSetXmlNum))
+                throw Error('expectedUpdateSetXmlNum invalid (NaN) '+ payload.expectedUpdateSetXmlNum);
+            if (expectedUpdateSetXmlNum == -1)
+                throw Error('expectedUpdateSetXmlNum invalid (-1)');
+            
+            var agg = new GlideAggregate('sys_update_xml');
+            agg.addQuery('remote_update_set.remote_sys_id', 'STARTSWITH', updateSetSysId);
+            agg.addAggregate('COUNT')
+            agg.query();
+            if (agg.next()) {
+                loadedUpdateSetXmlNum = parseInt(agg.getAggregate('COUNT'), 10);
+            }
+
+            self.console.log('[Preview Update Set] : LoadedXML {0}, ExpectedXml {1}', loadedUpdateSetXmlNum, expectedUpdateSetXmlNum);
+
+            if (loadedUpdateSetXmlNum != expectedUpdateSetXmlNum) {
+                self.console.error('[Preview Update Set] : Incorrect number of UpdateSetXML records. Expected Records: {0}; Loaded Records: {1}',expectedUpdateSetXmlNum, loadedUpdateSetXmlNum);
+                var error = {
+                    name: 'Incorrect number of UpdateSetXML records',
+                    message: 'Incorrect number of UpdateSetXML records. Expected records: ' + expectedUpdateSetXmlNum + ' - lLoaded records: ' + loadedUpdateSetXmlNum,
+                    issues: true,
+                    updateSet: false, // essential! to be seen as error on the server side
+                    previewProblems: [],
+                    dataLossWarnings: [],
+                    payload : payload
+                };
+                self.response.setStatus(409);
+                // also send the payload back
+                return self.response.setBody({
+                    code: 409,
+                    error: error,
+                    status: 'failure'
+                });
+            }
+        }
 
         /*
             in case the sys property 'glide.update_set.auto_preview' is not enabled, 
@@ -772,7 +902,7 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
             */
             var progressId = (function () {
                 if (rus.remote_base_update_set.nil()) {
-                    self.console.info("[PREVIEW UPDATE SET] : Starting update set preview for: {0}", rus.name);
+                    self.console.log("[PREVIEW UPDATE SET] : Starting update set preview for: {0}", rus.name);
                     return new UpdateSetPreviewAjax().previewRemoteUpdateSetAgain(rus);
                 } else {
 
@@ -790,23 +920,24 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
                     tracker.orderByDesc("sys_created_on");
                     tracker.query();
                     while (tracker.next()) {
-                        self.console.info("[PREVIEW UPDATE SET] : Cancelling existing execution tracker: {0}", updateSet.sys_id);
+                        self.console.log("[PREVIEW UPDATE SET] : Cancelling existing execution tracker: {0}", updateSet.sys_id);
                         var previewer = new UpdateSetPreviewAjax();
                         previewer.sendCancelSignal(tracker.sys_id);
                     }
                     // END Cancel any running trackers on the batch
 
-                    self.console.info("[PREVIEW UPDATE SET]: Starting update set batch preview for: {0}", updateSet.name);
+                    self.console.log("[PREVIEW UPDATE SET]: Starting update set batch preview for: {0}", updateSet.name);
 
                     return new HierarchyUpdateSetPreviewAjax().previewRemoteHierarchyUpdateSetAgain(updateSet);
                 }
             })();
 
-            self.console.info("[PREVIEW UPDATE SET] : UpdateSetPreviewer completed progress_id: {0}", progressId);
+            self.console.log("[PREVIEW UPDATE SET] : UpdateSetPreviewer completed progress_id: {0}", progressId);
 
             self.assign(payload, {
                 state: "previewing",
                 progressId: progressId,
+                trackerResult: null,
                 remoteUpdateSetSysId: remoteUpdateSetSysId,
                 step: 'commitUpdateSet'
             });
@@ -948,14 +1079,14 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
                         if (status == 'skipped') {// skipped = 'Skip remote update'
                             // this change can be ignored
                             self.console.log('[Auto Conflict resolution] set this record to "SKIPPED" : {0}', gs.getProperty('glide.servlet.uri').concat(problem.getLink(true)));
-                            
+
                             //problem.setValue('status', status);
                             var ppa = new GlidePreviewProblemAction(new GlideAction(), problem);
                             ppa.skipUpdate(); // Problem has been skipped. The update that caused this problem will not be committed.
 
                             problem.setValue('description', '[CICD] - This issue was automatically SKIPPED by the CICD process (based on preflight conflict resolution)\n'.concat(problem.getValue('description')));
                             problem.update();
-                            
+
                         } else if (status == 'ignored') { // ignored = 'Accept remote update'
                             // check if the local record is by any chance newer than the one we should accept
                             // this can be the case if there was another deployment to target from another dev environment
@@ -987,7 +1118,7 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
 
                                 // this change can be accepted
                                 self.console.log('[Auto Conflict resolution] set this record to "IGNORED" : {0}', gs.getProperty('glide.servlet.uri').concat(problem.getLink(true)));
-                                
+
                                 //problem.setValue('status', status);
                                 var ppa = new GlidePreviewProblemAction(new GlideAction(), problem);
                                 ppa.ignoreProblem(); // Problem has been ignored
@@ -1071,11 +1202,11 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
 
 
             var ignoreDeliveryConflicts = ('true' == gs.getProperty('cicd-integration.ignore-delivery-conflicts', 'false'));
-            
+
             // in case of some issues exit here
             if (error.issues) {
                 // incase of delivery AND ignore-delivery-conflicts, only log a warning, but pass
-                if(ignoreDeliveryConflicts && !payload.collisionDetect && !payload.deploy){
+                if (ignoreDeliveryConflicts && !payload.collisionDetect && !payload.deploy) {
                     self.console.warn("[COMMIT UPDATE SET] conflicts detected but ignored during delivery of /sys_remote_update_set.do?sys_id={0} ", payload.remoteUpdateSetSysId)
                     // just incase: return the related errors
                     payload.deliveryConflicts = error;
@@ -1146,6 +1277,7 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
             self.assign(payload, {
                 state: 'committing',
                 progressId: progressId,
+                trackerResult: null,
                 step: 'deploymentComplete'
             });
 
