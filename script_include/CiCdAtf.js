@@ -174,22 +174,58 @@ CiCdAtf.prototype = /** @lends global.module:sys_script_include.CiCdAtf.prototyp
     },
 
     /**
-     * Tet Test-Suite results<br>
+     * Old version, please use getSuiteResultsDeep() instead
+     * 
+     * @deprecated
+     * @returns {any} out
+     */
+    getSuiteResults: function () {
+        var self = this;
+
+        var suiteId = self.getPathParam('suiteId');
+        return self._getSuiteResults(suiteId);
+    },
+
+    /**
+     * Get Test-Suite results including all child suites<br>
      * 
      * mapped to GET /api/devops/v1/cicd/atf/suite/{id}
      * @returns {any} out
      */
-    getSuiteResults: function () {
+    getSuiteResultsDeep: function () {
+        var self = this,
+        out = [];
+
+        var suiteId = self.getPathParam('suiteId');
+
+        var gr = new GlideRecord('sys_atf_test_suite_result');
+        gr.addQuery('base_suite_result', suiteId);
+        gr.orderBy('number');
+        gr._query();
+        while (gr._next()) {
+            out.push( self._getSuiteResults(gr.getValue('sys_id')) );
+        }
+        return out;
+    },
+
+
+    _getSuiteResults: function (suiteId) {
         var self = this,
             out = {
                 testResults: []
             };
 
-        var suiteId = self.getPathParam('suiteId');
-
         var gr = new GlideRecord('sys_atf_test_suite_result');
         if (gr.get(suiteId)) {
             out.number = gr.getValue('number');
+            
+            out.suiteSysId = gr.getValue('test_suite');
+            out.suiteName = gr.getDisplayValue('test_suite');
+            
+            out.baseSuiteResultSysId = gr.getValue('base_suite_result');
+            out.baseSuiteResultName = gr.getDisplayValue('base_suite_result');
+
+            out.parent = (out.number == out.baseSuiteResultName )
             out.status = gr.getValue('status');
             out.duration = gr.getValue('run_time');
             out.url = gs.getProperty('glide.servlet.uri').concat(gr.getLink(true));
@@ -204,7 +240,6 @@ CiCdAtf.prototype = /** @lends global.module:sys_script_include.CiCdAtf.prototyp
         }
         return out;
     },
-
 
     /**
      * Execute a single Test<br>
