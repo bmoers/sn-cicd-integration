@@ -634,11 +634,17 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
                 if (!gs.nil(progressId)) {
                     var pgr = new GlideRecord('sys_execution_tracker');
                     if (!pgr.get(progressId)) {
-                        throw Error('no tracker found with that ID: '.concat(progressId));
+                        self.console.error('no tracker found with ID: '+ progressId + ' - '+ JSON.stringify(payload));
+                        throw Error('no tracker found with ID: '+ progressId + ' - '+ JSON.stringify(payload));
                     } else {
+                        
                         var state = parseInt(pgr.getValue('state'), 10);
+
                         if (state == 4) // Cancelled
                             throw Error('Execution Tracker cancelled: '.concat(pgr.getLink()));
+                        
+                        if(state == 3) // Failed
+                            throw Error(pgr.getValue('message').concat(pgr.getLink()));
 
                         if (parseInt(pgr.getValue('percent_complete'), 10) != 100) {
                             /*
@@ -646,6 +652,9 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
                             */
                             return self._sendLocation(304, payload);
                         } else {
+                            if(state != 2){
+                                throw Error('Execution Tracker Not Successful: '.concat(pgr.getLink()));
+                            }
                             payload.trackerResult = pgr.getValue('result');
                         }
                     }
@@ -738,7 +747,7 @@ CiCdDeploy.prototype = /** @lends global.module:sys_script_include.CiCdDeploy.pr
                     payload.expectedUpdateSetXmlNum = count;
                 } catch (e){
                     self.console.error(e);
-                    throw Error('UpdateSet Aggregation failed (JSON.parse(trackerResult))')
+                    throw Error('UpdateSet Aggregation failed '+ JSON.parse(trackerResult));
                 }
             }
             
