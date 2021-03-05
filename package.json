@@ -1,6 +1,6 @@
 {
   "name": "sn-cicd-integration",
-  "version": "1.4.12",
+  "version": "1.4.14",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -20,7 +20,7 @@
   "homepage": "https://github.com/bmoers/sn-cicd-integration#readme",
   "devDependencies": {
     "bluebird": "^3.7.2",
-    "fs-extra": "^8.1.0",
+    "fs-extra": "^9.1.0",
     "gulp": "^4.0.2",
     "gulp-clean": "0.4.0",
     "gulp-notify": "3.2.0",
@@ -28,8 +28,8 @@
     "gulp-replace": "1.0.0",
     "gulp-using": "0.1.1",
     "puppeteer": "^1.20.0",
-    "request": "^2.88.0",
-    "request-promise": "^4.2.5"
+    "request": "^2.88.2",
+    "request-promise": "^4.2.6"
   },
   "dependencies": {
     "dotenv": "^8.2.0"
