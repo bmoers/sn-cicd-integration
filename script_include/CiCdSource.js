@@ -850,45 +850,80 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
         //tracker.setSourceTable();
         tracker.setMaxProgressValue(10);
         tracker.run();
-        try {
         
+        var retry = true;
+        var maxTry = 10;
+        var tryCount = 0;
+        var endpoint = self.settings.cicdServerExportURL.concat('/xml_count/', commitId);
+
+        try {
+
             var commitId = Array.isArray(payload.limitSet) ? payload.limitSet[0] : payload.limitSet;
             if (!commitId)
                 throw Error('payload.limitSet (commitId) not specified');
 
-        
+            if (self.settings.throughMidServer && gs.nil(self.settings.midServerName)) {
+                throw Error('no running MID server available');
+            }
+
+
             var request = new sn_ws.RESTMessageV2();
             if (self.settings.throughMidServer) {
-                if (gs.nil(self.settings.midServerName))
-                    throw Error('no running MID server available');
                 request.setMIDServer(self.settings.midServerName);
             }
 
-            request.setEndpoint(self.settings.cicdServerExportURL.concat('/xml_count/', commitId));
+            request.setEndpoint(endpoint);
             request.setRequestHeader("Accept", "application/json");
             request.setRequestHeader("Content-Type", "application/json");
             request.setHttpMethod('GET');
 
             var response = request.execute();
-            tracker.incrementProgressValue();
 
-            if (!response.haveError()) {
-                try {
-                    var responseJson = JSON.parse(response.getBody());
-                    tracker.updateResult({ count: responseJson.count });
-                    tracker.updateProgressValue(10);
-                    tracker.success('Export success')
-                    return;
+            while (retry) {
 
-                } catch (e) {
-                    throw gs.getMessage("JSON parsing failed. Text: {0}, Error: {1}", [response.getBody(), e]);
+                tryCount++;
+                if (tryCount >= maxTry) {
+                    retry = false;
                 }
-            } else {
-                var statusCode = response.getStatusCode();
-                throw gs.getMessage("Request ended in error - StatusCode {0}, ResponseMessage: {1}, Endpoint: {2}, RequestBody: {3}", [statusCode, response.getErrorMessage(), request.getEndpoint(), response.getBody()]);
-                
+
+                tracker.incrementProgressValue();
+
+                try {
+                    if (!response.haveError()) {
+                        try {
+                            var responseJson = JSON.parse(response.getBody());
+                            tracker.updateResult({ count: responseJson.count });
+                            tracker.updateProgressValue(10);
+                            tracker.success('Export success')
+                            break;
+
+                        } catch (e) {
+                            retry = false;
+                            throw gs.getMessage("JSON parsing failed. Text: {0}, Error: {1}", [response.getBody(), e]);
+                        }
+                    } else {
+                        var statusCode = response.getStatusCode();
+                        retry = false;
+                        throw gs.getMessage("Request ended in error - StatusCode {0}, ResponseMessage: {1}, Endpoint: {2}, RequestBody: {3}", [statusCode, response.getErrorMessage(), request.getEndpoint(), response.getBody()]);
+                    }
+                } catch (e) {
+
+                    // retry on ECCResponseTimeoutException issues
+                    if (!e.toString().includes('ECCResponseTimeoutException')) {
+                        throw e;
+                    }
+                    if (!retry) {
+                        self.console.error(gs.getMessage('aggregateUpdateSetWorker: Request failed after {0} retry to URL: \'{1}\'', [tryCount.toString(), endpoint]));
+                        throw e;
+                    }
+
+                    self.console.error(gs.getMessage('aggregateUpdateSetWorker: ECCResponseTimeoutException, going to retry ({0}) the request to URL: \'{0}\'', [tryCount.toString(), endpoint]));
+                    self.console.error(e);
+                }
             }
-        } catch (e){
+
+        } catch (e) {
+
             tracker.fail(gs.getMessage("Tracker Error: {0}", [e]));
             self.console.error(e);
         }
