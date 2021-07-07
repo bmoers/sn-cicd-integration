@@ -455,7 +455,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
             }
             return prev;
         }, []);
-        return '<'.concat(self.request.url, '?', queryParams.concat(['sysparm_limit=' + limit, 'sysparm_offset=' + offset]).join('&'), ';rel="', rel, '">');
+        return ''.concat('<', self.request.url, '?', queryParams.concat(['sysparm_limit=' + limit, 'sysparm_offset=' + offset]).join('&'), '>', ';rel="', rel, '"');
     },
 
     /**
