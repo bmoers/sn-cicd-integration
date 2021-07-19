@@ -854,8 +854,7 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
         var retry = true;
         var maxTry = 10;
         var tryCount = 0;
-        var endpoint = self.settings.cicdServerExportURL.concat('/xml_count/', commitId);
-
+        
         try {
 
             var commitId = Array.isArray(payload.limitSet) ? payload.limitSet[0] : payload.limitSet;
@@ -866,6 +865,7 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
                 throw Error('no running MID server available');
             }
 
+            var endpoint = self.settings.cicdServerExportURL.concat('/xml_count/', commitId);
 
             var request = new sn_ws.RESTMessageV2();
             if (self.settings.throughMidServer) {
