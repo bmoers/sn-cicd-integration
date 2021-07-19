@@ -64,7 +64,7 @@ CiCdWebHook.prototype = /** @lends global.module:sys_script_include.CiCdWebHook.
 
         self.proxyEnabled = Boolean(gs.getProperty('cicd-integration.pull-request-proxy.enabled', 'false') == 'true');
 
-        var cicdServerMatch = gs.getProperty('cicd-integration.server.url', '').match(/((?:http[s]?:\/\/)[^\/]*)/i);
+        var cicdServerMatch = gs.getProperty('cicd-integration.server.url', '').match(/((?:http[s]?:\/\/)[^/]*)/i);
         var cicdServer = (cicdServerMatch) ? cicdServerMatch[1] : 'server-undefined';
 
         self.proxyURL = cicdServer.concat('/pull_request');
@@ -87,7 +87,9 @@ CiCdWebHook.prototype = /** @lends global.module:sys_script_include.CiCdWebHook.
                     self.body = body;
                 }
             }
-        } catch (ignore) { }
+        } catch (ignore) { 
+            // ignore
+        }
     },
 
     /**
@@ -128,13 +130,13 @@ CiCdWebHook.prototype = /** @lends global.module:sys_script_include.CiCdWebHook.
                  * @param {any} byteArray
                  * @returns {any} 
                  */
-                function toHex(byteArray) {
+                var toHex = function(byteArray) {
                     return byteArray.map(function (b) {
-                        return ('0' + (b & 0xFF).toString(16)).slice(-2)
+                        return ('0' + (b & 0xFF).toString(16)).slice(-2);
                     }).join('');
-                }
+                };
 
-                var base64 = SncAuthentication.encode(self.bodyString, self.secretToken, "HmacSHA1");
+                var base64 = SncAuthentication.encode(self.bodyString, self.secretToken, 'HmacSHA1');
                 var bytes = GlideStringUtil.base64DecodeAsBytes(base64);
                 var hex = toHex(bytes);
                 if (secret.split('sha1=')[1] != hex) {
@@ -163,8 +165,8 @@ CiCdWebHook.prototype = /** @lends global.module:sys_script_include.CiCdWebHook.
         }
 
         request.setEndpoint(self.proxyURL);
-        request.setRequestHeader("Accept", "application/json");
-        request.setRequestHeader("Content-Type", "application/json");
+        request.setRequestHeader('Accept', 'application/json');
+        request.setRequestHeader('Content-Type', 'application/json');
         request.setHttpMethod('POST');
 
         request.setRequestBody(self.bodyString);
@@ -177,17 +179,17 @@ CiCdWebHook.prototype = /** @lends global.module:sys_script_include.CiCdWebHook.
                 if (responseJson) {
                     // TODO
                     // check response body for successful build start
-                    self.console.log("successful - result is: {0}", responseText);
+                    self.console.log('successful - result is: {0}', responseText);
                     return responseJson;
                 }
             } catch (e) {
-                self.console.error("JSON parsing failed. {0}", e);
+                self.console.error('JSON parsing failed. {0}', e);
                 throw e;
             }
 
         } else {
             var statusCode = response.getStatusCode();
-            self.console.error("request ended in error - StatusCode {0}, ResponseMessage: {1}, Endpoint: {2}, ResponseBody: {3}", statusCode, response.getErrorMessage(), self.proxyURL, response.getBody());
+            self.console.error('request ended in error - StatusCode {0}, ResponseMessage: {1}, Endpoint: {2}, ResponseBody: {3}', statusCode, response.getErrorMessage(), self.proxyURL, response.getBody());
             throw new Error(response.getErrorMessage());
         }
     },

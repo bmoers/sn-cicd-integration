@@ -1,6 +1,4 @@
 /* exported CiCdAtf */
-/* global sn_atf, gs, GlideChecksum, GlideXMLDocument, sn_ws, sn_ws_err, Class, TestExecutorAjax, GlideRecord, GlideProperties, JSON */
-
 
 /**
  * Class Description
@@ -83,10 +81,10 @@ CiCdAtf.prototype = /** @lends global.module:sys_script_include.CiCdAtf.prototyp
     getTestRunnerSessionId: function (runnerId) {
         var testRunnerSessionId = null;
 
-        var existingRunner = new GlideRecord("sys_atf_agent");
-        existingRunner.addQuery("status", "online");
-        existingRunner.addQuery("type", "manual");
-        existingRunner.addQuery("user_agent", "CONTAINS", runnerId);
+        var existingRunner = new GlideRecord('sys_atf_agent');
+        existingRunner.addQuery('status', 'online');
+        existingRunner.addQuery('type', 'manual');
+        existingRunner.addQuery('user_agent', 'CONTAINS', runnerId);
         // existingRunner.addQuery("session_id", new GlideChecksum(gs.getSessionID()).getMD5());
         // otherSessionRunner.addQuery("session_id","!=", new GlideChecksum(gs.getSessionID()).getMD5());
         // existingRunner.addQuery("user", gs.getUserID());
@@ -130,7 +128,7 @@ CiCdAtf.prototype = /** @lends global.module:sys_script_include.CiCdAtf.prototyp
         
         var gr = new GlideRecord('sys_atf_test_suite');
         if (!gr.get(suiteId)) {
-            return new sn_ws_err.BadRequestError("Could not find the Test suite with id: " + suiteId);
+            return new sn_ws_err.BadRequestError('Could not find the Test suite with id: ' + suiteId);
         }
 
         out.url = gs.getProperty('glide.servlet.uri').concat(gr.getLink(true));
@@ -140,7 +138,7 @@ CiCdAtf.prototype = /** @lends global.module:sys_script_include.CiCdAtf.prototyp
         if (need_browser) {
             testRunnerSessionId = self.getTestRunnerSessionId(runnerId);
             if (gs.nil(testRunnerSessionId)) {
-                return new sn_ws_err.BadRequestError("This TestSuite requires an active Test Runner to be available.");
+                return new sn_ws_err.BadRequestError('This TestSuite requires an active Test Runner to be available.');
             }
         }
 
@@ -194,7 +192,7 @@ CiCdAtf.prototype = /** @lends global.module:sys_script_include.CiCdAtf.prototyp
      */
     getSuiteResultsDeep: function () {
         var self = this,
-        out = [];
+            out = [];
 
         var suiteId = self.getPathParam('suiteId');
 
@@ -225,7 +223,7 @@ CiCdAtf.prototype = /** @lends global.module:sys_script_include.CiCdAtf.prototyp
             out.baseSuiteResultSysId = gr.getValue('base_suite_result');
             out.baseSuiteResultName = gr.getDisplayValue('base_suite_result');
 
-            out.parent = (out.number == out.baseSuiteResultName )
+            out.parent = (out.number == out.baseSuiteResultName );
             out.status = gr.getValue('status');
             out.duration = gr.getValue('run_time');
             out.url = gs.getProperty('glide.servlet.uri').concat(gr.getLink(true));
@@ -271,7 +269,7 @@ CiCdAtf.prototype = /** @lends global.module:sys_script_include.CiCdAtf.prototyp
         
         var gr = new GlideRecord('sys_atf_test');
         if (!gr.get(testId)) {
-            return new sn_ws_err.BadRequestError("Could not find the Test suite with id: " + testId);
+            return new sn_ws_err.BadRequestError('Could not find the Test suite with id: ' + testId);
         }
 
         out.url = gs.getProperty('glide.servlet.uri').concat(gr.getLink(true));
@@ -281,7 +279,7 @@ CiCdAtf.prototype = /** @lends global.module:sys_script_include.CiCdAtf.prototyp
         if (need_browser) {
             testRunnerSessionId = self.getTestRunnerSessionId(runnerId);
             if (gs.nil(testRunnerSessionId)) {
-                return new sn_ws_err.BadRequestError("This Test requires an active Test Runner to be available.");
+                return new sn_ws_err.BadRequestError('This Test requires an active Test Runner to be available.');
             }
         }
 
