@@ -1,5 +1,4 @@
 /* exported CiCdSource */
-/* global gs, sn_ws, sn_ws_err, Class, GlideEncrypter, GlideSecureRandomUtil, GlideUpdateSetWorker, GlideDateTime, GlideRecord, GlideProperties, JSON */
 
 /**
  * CDCD Trigger to execute run in CICD Server
@@ -67,7 +66,7 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
             },
         };
 
-        var cicdServerMatch = gs.getProperty('cicd-integration.server.url', '').match(/((?:http[s]?:\/\/)[^\/]*)/i);
+        var cicdServerMatch = gs.getProperty('cicd-integration.server.url', '').match(/((?:http[s]?:\/\/)[^/]*)/i);
         var cicdServer = (cicdServerMatch) ? cicdServerMatch[1] : 'server-undefined';
 
         self.settings = self.assign({
@@ -94,8 +93,8 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
         }
 
         request.setEndpoint(self.settings.cicdServerExportURL.concat('/update_set/', commitId));
-        request.setRequestHeader("Accept", "application/json");
-        request.setRequestHeader("Content-Type", "application/json");
+        request.setRequestHeader('Accept', 'application/json');
+        request.setRequestHeader('Content-Type', 'application/json');
         request.setHttpMethod('GET');
 
         //self.console.log('Settings {0}', JSON.stringify(self.settings));
@@ -110,12 +109,12 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
                 return responseJson;
 
             } catch (e) {
-                self.console.error("JSON parsing failed. Text: {0}, Error:", response.getBody(), e);
+                self.console.error('JSON parsing failed. Text: {0}, Error:', response.getBody(), e);
                 throw e;
             }
         } else {
             var statusCode = response.getStatusCode();
-            self.console.error("request ended in error - StatusCode {0}, ResponseMessage: {1}, Endpoint: {2}, RequestBody: {3}", statusCode, response.getErrorMessage(), request.getEndpoint(), response.getBody());
+            self.console.error('request ended in error - StatusCode {0}, ResponseMessage: {1}, Endpoint: {2}, RequestBody: {3}', statusCode, response.getErrorMessage(), request.getEndpoint(), response.getBody());
             throw Error(response.getErrorMessage());
         }
     },
@@ -135,8 +134,8 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
         }
 
         request.setEndpoint(self.settings.cicdServerExportURL.concat('/sys_scope/', scopeId));
-        request.setRequestHeader("Accept", "application/json");
-        request.setRequestHeader("Content-Type", "application/json");
+        request.setRequestHeader('Accept', 'application/json');
+        request.setRequestHeader('Content-Type', 'application/json');
         request.setHttpMethod('GET');
 
         //self.console.log('Settings {0}', JSON.stringify(self.settings));
@@ -151,12 +150,12 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
                 return responseJson;
 
             } catch (e) {
-                self.console.error("JSON parsing failed. Text: {0}, Error:", response.getBody(), e);
+                self.console.error('JSON parsing failed. Text: {0}, Error:', response.getBody(), e);
                 throw e;
             }
         } else {
             var statusCode = response.getStatusCode();
-            self.console.error("request ended in error - StatusCode {0}, ResponseMessage: {1}, Endpoint: {2}, RequestBody: {3}", statusCode, response.getErrorMessage(), request.getEndpoint(), response.getBody());
+            self.console.error('request ended in error - StatusCode {0}, ResponseMessage: {1}, Endpoint: {2}, RequestBody: {3}', statusCode, response.getErrorMessage(), request.getEndpoint(), response.getBody());
             throw Error(response.getErrorMessage());
         }
     },
@@ -191,29 +190,29 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
                 rest.setEndpoint(gs.getProperty('glide.servlet.uri').concat(request.pathParams.page, '?', request.queryString));
                 rest.setRequestHeader('Authorization', request.getHeader('Authorization'));
                 rest.setHttpMethod('GET');
-                rest.setRequestHeader("Accept", "application/json");
-                rest.setRequestHeader("Content-Type", "application/json");
+                rest.setRequestHeader('Accept', 'application/json');
+                rest.setRequestHeader('Content-Type', 'application/json');
 
                 var resp = rest.execute();
                 response.setStatus(resp.getStatusCode());
                 response.setContentType('application/json');
                 if (response.haveError())
-                    throw Error(response.getErrorMessage())
+                    throw Error(response.getErrorMessage());
 
                 var body = resp.getBody();
                 var bObj = JSON.parse(body);
                 if (bObj.error)
-                    throw Error(body)
+                    throw Error(body);
 
                 return response.getStreamWriter().writeString(body);
             } catch (e) {
                 // hub.do need high privileges, if the current user d
                 return response.getStreamWriter().writeString(JSON.stringify({
-                    "__comment": "this is not the official hub payload",
-                    "com.snc.teamdev.requires_codereview": gs.getProperty('com.snc.teamdev.requires_codereview'),
-                    "instance_id": gs.getProperty('instance_id'),
-                    "instance_properties": gs.getProperty('mid.buildstamp', 'dunno').concat('.zip'),
-                    "upgrade_system_busy": GlidePluginManager.isUpgradeSystemBusy()
+                    '__comment': 'this is not the official hub payload',
+                    'com.snc.teamdev.requires_codereview': gs.getProperty('com.snc.teamdev.requires_codereview'),
+                    'instance_id': gs.getProperty('instance_id'),
+                    'instance_properties': gs.getProperty('mid.buildstamp', 'dunno').concat('.zip'),
+                    'upgrade_system_busy': GlidePluginManager.isUpgradeSystemBusy()
                 }));
             }
         }
@@ -249,29 +248,29 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
             var writer = response.getStreamWriter();
 
             switch (page) {
-                case 'sys_properties.do':
-                    response.setStatus(200);
-                    writer.writeString(self.sysPropertiesWS(requestXml, envelope).toString());
-                    break;
+            case 'sys_properties.do':
+                response.setStatus(200);
+                writer.writeString(self.sysPropertiesWS(requestXml, envelope).toString());
+                break;
 
-                case 'sys_scope.do':
-                    response.setStatus(200);
-                    writer.writeString(self.sysScopeWS(requestXml, envelope).toString());
-                    break;
+            case 'sys_scope.do':
+                response.setStatus(200);
+                writer.writeString(self.sysScopeWS(requestXml, envelope).toString());
+                break;
 
-                case 'sys_update_set.do':
-                    response.setStatus(200);
-                    writer.writeString(self.updateSetWS(requestXml, envelope).toString());
-                    break;
+            case 'sys_update_set.do':
+                response.setStatus(200);
+                writer.writeString(self.updateSetWS(requestXml, envelope).toString());
+                break;
 
-                case 'sys_update_xml.do':
-                    response.setStatus(200);
-                    writer.writeString(self.updateSetXmlWS(requestXml, envelope).toString());
-                    break;
+            case 'sys_update_xml.do':
+                response.setStatus(200);
+                writer.writeString(self.updateSetXmlWS(requestXml, envelope).toString());
+                break;
 
-                default:
-                    response.setStatus(404);
-                    break;
+            default:
+                response.setStatus(404);
+                break;
             }
         } catch (e) {
             self.console.error('restPostWrapper ' + e);
@@ -311,19 +310,19 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
                 env.setCurrent(env.createElement(funcName + 'Response'));
                 return env;
             } else {
-                return new XMLDocument("<" + funcName + "Response/>");
+                return new XMLDocument('<' + funcName + 'Response/>');
             }
         })();
 
         if ('getKeys' == funcName) {
 
-            resp.createElement("count", count);
-            resp.createElement("sys_id", commitId);
+            resp.createElement('count', count);
+            resp.createElement('sys_id', commitId);
 
         } else if ('getRecords' == funcName) {
 
-            resp.createElement("count", count);
-            var result = resp.createElement("getRecordsResult");
+            resp.createElement('count', count);
+            var result = resp.createElement('getRecordsResult');
             resp.setCurrent(result);
 
             var head = self.assign({
@@ -352,10 +351,10 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
                 sys_mod_count: null,
                 sys_updated_by: null,
                 sys_updated_on: null
-            }, self._getUpdateSet(commitId))
+            }, self._getUpdateSet(commitId));
             //self.console.log('getUpdateSet {0}', JSON.stringify(head));
 
-            self._preference.set(head.sys_id, commitId)
+            self._preference.set(head.sys_id, commitId);
 
             // create the XML payload
             Object.keys(head).forEach(function (name) {
@@ -470,28 +469,28 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
                 env.setCurrent(env.createElement(funcName + 'Response'));
                 return env;
             } else {
-                return new XMLDocument("<" + funcName + "Response/>");
+                return new XMLDocument('<' + funcName + 'Response/>');
             }
         })();
 
-
+        var gr;
         if ('getKeys' == funcName) {
 
-            var gr = new GlideRecord('sys_properties');
+            gr = new GlideRecord('sys_properties');
             if (gr.get('name', 'instance_id')) {
-                resp.createElement("count", 1);
-                resp.createElement("sys_id", gr.getValue('sys_id'));
+                resp.createElement('count', 1);
+                resp.createElement('sys_id', gr.getValue('sys_id'));
             } else {
                 throw Error('property not found');
             }
 
         } else if ('getRecords' == funcName) {
 
-            resp.createElement("count", 1);
-            var result = resp.createElement("getRecordsResult");
+            resp.createElement('count', 1);
+            var result = resp.createElement('getRecordsResult');
             resp.setCurrent(result);
 
-            var gr = new GlideRecord('sys_properties');
+            gr = new GlideRecord('sys_properties');
             if (gr.get('name', 'instance_id')) {
                 Object.keys(gr).forEach(function (fieldName) {
                     fieldName = fieldName.trim();
@@ -499,7 +498,7 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
                     if (!gr.isValidField(fieldName.split('.')[0]))
                         return;
                     resp.createElement(fieldName, gr.getValue(fieldName));
-                })
+                });
             }
         }
 
@@ -549,14 +548,14 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
                 env.setCurrent(env.createElement(funcName + 'Response'));
                 return env;
             } else {
-                return new XMLDocument("<" + funcName + "Response/>");
+                return new XMLDocument('<' + funcName + 'Response/>');
             }
         })();
 
         if ('getKeys' == funcName) {
             scopeSysId = body['getKeys']['sys_id'];
-            resp.createElement("count", 1);
-            resp.createElement("sys_id", scopeSysId);
+            resp.createElement('count', 1);
+            resp.createElement('sys_id', scopeSysId);
 
         } else if ('getRecords' == funcName) {
             var query = body['getRecords']['__encoded_query'];
@@ -569,10 +568,10 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
                 }
             }
             if (!scopeSysId)
-                throw "No sys_id found in query";
+                throw 'No sys_id found in query';
 
-            resp.createElement("count", 1);
-            var result = resp.createElement("getRecordsResult");
+            resp.createElement('count', 1);
+            var result = resp.createElement('getRecordsResult');
             resp.setCurrent(result);
 
             var head = self.assign({
@@ -604,7 +603,7 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
                 vendor: undefined,
                 vendor_prefix: undefined,
                 version: '1.0.0'
-            }, self._getScope(scopeSysId))
+            }, self._getScope(scopeSysId));
             //self.console.log('getUpdateSet {0}', JSON.stringify(head));
 
             // create the XML payload
@@ -662,7 +661,7 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
                 env.setCurrent(env.createElement(funcName + 'Response'));
                 return env;
             } else {
-                return new XMLDocument("<" + funcName + "Response/>");
+                return new XMLDocument('<' + funcName + 'Response/>');
             }
         })();
 
@@ -676,15 +675,15 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
                 as the update-set sysId (commitId) is not sent to the XML api we 
                 have to keep it. unfortunately the client is not session aware, so put it into user prop..
             */
-            self._chunkArray(aggregate.sys_id.split(','), 250).forEach(function (page, index) {
+            self._chunkArray(aggregate.sys_id.split(','), 250).forEach(function (page) {
                 var md5 = new GlideChecksum(page.join(',')).getMD5();
                 self._preference.set(md5, commitId);
                 //self.console.log('SAVE TO SESSION:  - md5: ' + md5 + ' sysId: ' + commitId);
             });
 
 
-            resp.createElement("count", aggregate.count);
-            resp.createElement("sys_id", aggregate.sys_id);
+            resp.createElement('count', aggregate.count);
+            resp.createElement('sys_id', aggregate.sys_id);
 
         } else if ('getRecords' == funcName) {
 
@@ -698,7 +697,7 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
                 }
             }
             if (!xmlSysIds)
-                throw "No sys_id found in query";
+                throw 'No sys_id found in query';
 
             /*
                 get the commitId form the user prefs and delete it later.
@@ -714,9 +713,9 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
 
             //resp = new XMLDocument("<" + funcName + "Response>" + self._getUpdateSetXml(commitId, xmlSysIds) + "</" + funcName + "Response>");
             if (envelope) {
-                resp = new XMLDocument(envelope.replace("<SOAP-ENV:Body></SOAP-ENV:Body>", "<SOAP-ENV:Body><" + funcName + "Response>" + self._getUpdateSetXml(commitId, xmlSysIds) + "</" + funcName + "Response></SOAP-ENV:Body>"));
+                resp = new XMLDocument(envelope.replace('<SOAP-ENV:Body></SOAP-ENV:Body>', '<SOAP-ENV:Body><' + funcName + 'Response>' + self._getUpdateSetXml(commitId, xmlSysIds) + '</' + funcName + 'Response></SOAP-ENV:Body>'));
             } else {
-                resp = new XMLDocument("<" + funcName + "Response>" + self._getUpdateSetXml(commitId, xmlSysIds) + "</" + funcName + "Response>");
+                resp = new XMLDocument('<' + funcName + 'Response>' + self._getUpdateSetXml(commitId, xmlSysIds) + '</' + funcName + 'Response>');
             }
         }
 
@@ -764,8 +763,8 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
         //self.console.log('commitId {0}', commitId);
 
         request.setEndpoint(self.settings.cicdServerExportURL.concat('/xml_count/', commitId));
-        request.setRequestHeader("Accept", "application/json");
-        request.setRequestHeader("Content-Type", "application/json");
+        request.setRequestHeader('Accept', 'application/json');
+        request.setRequestHeader('Content-Type', 'application/json');
         request.setHttpMethod('GET');
 
 
@@ -777,12 +776,12 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
                 return responseJson;
 
             } catch (e) {
-                self.console.error("JSON parsing failed. Text: {0}, Error:", response.getBody(), e);
+                self.console.error('JSON parsing failed. Text: {0}, Error:', response.getBody(), e);
                 throw e;
             }
         } else {
             var statusCode = response.getStatusCode();
-            self.console.error("request ended in error - StatusCode {0}, ResponseMessage: {1}, Endpoint: {2}, RequestBody: {3}", statusCode, response.getErrorMessage(), request.getEndpoint(), response.getBody());
+            self.console.error('request ended in error - StatusCode {0}, ResponseMessage: {1}, Endpoint: {2}, RequestBody: {3}', statusCode, response.getErrorMessage(), request.getEndpoint(), response.getBody());
             throw Error(response.getErrorMessage());
         }
     },
@@ -806,8 +805,8 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
         //self.console.log('commitId {0}', commitId);
 
         request.setEndpoint(self.settings.cicdServerExportURL.concat('/xml/'));
-        request.setRequestHeader("Accept", "application/json");
-        request.setRequestHeader("Content-Type", "application/json");
+        request.setRequestHeader('Accept', 'application/json');
+        request.setRequestHeader('Content-Type', 'application/json');
         request.setHttpMethod('POST');
 
         var body = {
@@ -824,12 +823,12 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
                 return responseXML;
 
             } catch (e) {
-                self.console.error("JSON parsing failed. Text: {0}, Error:", response.getBody(), e);
+                self.console.error('JSON parsing failed. Text: {0}, Error:', response.getBody(), e);
                 throw e;
             }
         } else {
             var statusCode = response.getStatusCode();
-            self.console.error("request ended in error - StatusCode {0}, ResponseMessage: {1}, Endpoint: {2}, RequestBody: {3}", statusCode, response.getErrorMessage(), request.getEndpoint(), JSON.stringify(body));
+            self.console.error('request ended in error - StatusCode {0}, ResponseMessage: {1}, Endpoint: {2}, RequestBody: {3}', statusCode, response.getErrorMessage(), request.getEndpoint(), JSON.stringify(body));
             throw Error(response.getErrorMessage());
         }
     },
@@ -841,7 +840,7 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
     aggregateUpdateSetWorker: function (payload) {
         var self = this;
 
-        self.console.log('aggregateUpdateSetWorker: {0}', JSON.stringify(payload))
+        self.console.log('aggregateUpdateSetWorker: {0}', JSON.stringify(payload));
 
         if (!payload)
             throw Error('payload not specified');
@@ -873,8 +872,8 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
             }
 
             request.setEndpoint(endpoint);
-            request.setRequestHeader("Accept", "application/json");
-            request.setRequestHeader("Content-Type", "application/json");
+            request.setRequestHeader('Accept', 'application/json');
+            request.setRequestHeader('Content-Type', 'application/json');
             request.setHttpMethod('GET');
 
             var response = request.execute();
@@ -894,17 +893,17 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
                             var responseJson = JSON.parse(response.getBody());
                             tracker.updateResult({ count: responseJson.count });
                             tracker.updateProgressValue(10);
-                            tracker.success('Export success')
+                            tracker.success('Export success');
                             break;
 
                         } catch (e) {
                             retry = false;
-                            throw gs.getMessage("JSON parsing failed. Text: {0}, Error: {1}", [response.getBody(), e]);
+                            throw gs.getMessage('JSON parsing failed. Text: {0}, Error: {1}', [response.getBody(), e]);
                         }
                     } else {
                         var statusCode = response.getStatusCode();
                         retry = false;
-                        throw gs.getMessage("Request ended in error - StatusCode {0}, ResponseMessage: {1}, Endpoint: {2}, RequestBody: {3}", [statusCode, response.getErrorMessage(), request.getEndpoint(), response.getBody()]);
+                        throw gs.getMessage('Request ended in error - StatusCode {0}, ResponseMessage: {1}, Endpoint: {2}, RequestBody: {3}', [statusCode, response.getErrorMessage(), request.getEndpoint(), response.getBody()]);
                     }
                 } catch (e) {
 
@@ -924,7 +923,7 @@ CiCdSource.prototype = /** @lends global.module:sys_script_include.CiCdSource.pr
 
         } catch (e) {
 
-            tracker.fail(gs.getMessage("Tracker Error: {0}", [e]));
+            tracker.fail(gs.getMessage('Tracker Error: {0}', [e]));
             self.console.error(e);
         }
     },

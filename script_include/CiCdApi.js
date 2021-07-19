@@ -255,7 +255,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
 
         var sc = new GlideRecord('sys_app');
         if (!sc.get(appId))
-            throw Error("application not found");
+            throw Error('application not found');
 
         // the sysId of the update set
         var sysId = new GlideChecksum(sc.getValue('name').concat(sc.getValue('version'), sc.getValue('sys_id'), gs.getProperty('instance_name'))).getMD5();
@@ -274,8 +274,8 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
 
                 self.console.error('[publishToUpdateSet] There is already a running CICD run {0}', sysId.toString());
 
-                var error = new Error("There is already a CICD run in progress for this application.");
-                error.code = "ALREADY_RUNNING"
+                var error = new Error('There is already a CICD run in progress for this application.');
+                error.code = 'ALREADY_RUNNING';
                 error.link = gs.getProperty('glide.servlet.uri').concat(checkUs.getLink(true));
 
                 throw error;
@@ -348,7 +348,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
             if (queryStore[className] === undefined)
                 queryStore[className] = [];
 
-            queryStore[className].push(meta.getValue('sys_id'))
+            queryStore[className].push(meta.getValue('sys_id'));
         }
 
         self.console.info('[publishToUpdateSet] add all files to the update set');
@@ -555,7 +555,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
             }
             links.push(self._createLink(limit, lastOffset, 'last'));
             // append to header
-            self.response.setHeader("Link", links.join(','));
+            self.response.setHeader('Link', links.join(','));
         }
 
         self.response.setStatus(200);
@@ -667,7 +667,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
                         delete depOut.sys_id;
                         __dependentsDelete.push(depOut);
                     }
-                })
+                });
 
                 if (__dependents.length) {
                     out.__dependents = __dependents;
@@ -733,7 +733,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
         var xmlString = self.glideRecordSimpleSerializer.serialize(gr);
 
         var xmlDoc = new XMLDocument(xmlString);
-        var nodeList = xmlDoc.getNodes("//" + gr.getTableName() + "/*[@action]");
+        var nodeList = xmlDoc.getNodes('//' + gr.getTableName() + '/*[@action]');
         var a = [];
 
         for (var i = 0; i < nodeList.getLength(); i++) {
@@ -742,7 +742,7 @@ CiCdApi.prototype = /** @lends global.module:sys_script_include.CiCdApi.prototyp
             if (gr.getTableName() == item.getNodeName())
                 return;
 
-            var meta = { className: item.getNodeName(), sysId: xmlDoc.getChildTextByTagName(item, "sys_id") };
+            var meta = { className: item.getNodeName(), sysId: xmlDoc.getChildTextByTagName(item, 'sys_id') };
 
             var attributes = item.getAttributes();
             for (var j = 0; j < attributes.getLength(); j++) {

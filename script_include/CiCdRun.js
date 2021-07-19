@@ -93,7 +93,7 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
             }
         };
 
-        var cicdServerMatch = gs.getProperty('cicd-integration.server.url', '').match(/((?:http[s]?:\/\/)[^\/]*)/i);
+        var cicdServerMatch = gs.getProperty('cicd-integration.server.url', '').match(/((?:http[s]?:\/\/)[^/]*)/i);
         var cicdServer = (cicdServerMatch) ? cicdServerMatch[1] : 'server-undefined';
 
         self.settings = self.assign({
@@ -141,10 +141,10 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
             return;
 
         if (GlidePreviewProblemHandler.hasUnresolvedProblems(current.sys_id)) {
-            gs.addErrorMessage("<p><b>[CICD]</b> Please resolve the conflicts below.<br>'Skip' will ignore the record during future deployments. 'Accept' will force the record during future deployments.<br>If the update set contains unwanted changes, click on 'Cancel Run [CICD]'.</p>");
+            gs.addErrorMessage('<p><b>[CICD]</b> Please resolve the conflicts below.<br>\'Skip\' will ignore the record during future deployments. \'Accept\' will force the record during future deployments.<br>If the update set contains unwanted changes, click on \'Cancel Run [CICD]\'.</p>');
             current.setWorkflow(false);
         } else {
-            gs.addInfoMessage("<p><b>[CICD]</b> To continue the pipeline, please confirm the preview problems now.<br>If the update set contains unwanted changes, click on 'Cancel Run [CICD]'.</p>");
+            gs.addInfoMessage('<p><b>[CICD]</b> To continue the pipeline, please confirm the preview problems now.<br>If the update set contains unwanted changes, click on \'Cancel Run [CICD]\'.</p>');
             current.setWorkflow(false);
         }
 
@@ -183,7 +183,7 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
         var scopes = self.getUpdateSetScopeApplications(current);
         if (self.settings.noMultiScopeUpdateSet && scopes.length > 1) {
             var apps = scopes.map(function (scope) {
-                return '\''.concat(scope.name, ' (' + scope.num + ')', '\'')
+                return '\''.concat(scope.name, ' (' + scope.num + ')', '\'');
             }).join(', ');
             gs.addErrorMessage('This update set has customer updates of multiple scopes: ' + apps + '.<br><i class="notification-icon icon-warning-circle"></i> Please ensure this update set has one scope only.');
             return false;
@@ -197,47 +197,47 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
 
         switch (current.getValue('state')) {
 
-            case 'conflict_review_in_progress':
-                gs.addInfoMessage('CICD: Conflict review in <a href="'.concat(url).concat('" target="_blank">progress</a>'));
-                break;
+        case 'conflict_review_in_progress':
+            gs.addInfoMessage('CICD: Conflict review in <a href="'.concat(url).concat('" target="_blank">progress</a>'));
+            break;
 
-            case 'conflict_review_passed':
-                gs.addInfoMessage('CICD: Conflict review <a href="'.concat(url).concat('" target="_blank">passed</a>'));
-                break;
+        case 'conflict_review_passed':
+            gs.addInfoMessage('CICD: Conflict review <a href="'.concat(url).concat('" target="_blank">passed</a>'));
+            break;
 
-            case 'build':
-                gs.addInfoMessage('CICD: Build is <a href="'.concat(url).concat('" target="_blank">requested</a>'));
-                break;
+        case 'build':
+            gs.addInfoMessage('CICD: Build is <a href="'.concat(url).concat('" target="_blank">requested</a>'));
+            break;
 
-            case 'build_in_progress':
-                gs.addInfoMessage('CICD: Build is in <a href="'.concat(url).concat('" target="_blank">progress</a>'));
-                break;
+        case 'build_in_progress':
+            gs.addInfoMessage('CICD: Build is in <a href="'.concat(url).concat('" target="_blank">progress</a>'));
+            break;
 
-            case 'code_review_pending':
-                gs.addInfoMessage('CICD: Code review <a href="'.concat(url).concat('" target="_blank">pending</a>'));
-                break;
+        case 'code_review_pending':
+            gs.addInfoMessage('CICD: Code review <a href="'.concat(url).concat('" target="_blank">pending</a>'));
+            break;
 
-            case 'code_review_rejected':
-                gs.addErrorMessage('CICD: Code review <a href="'.concat(url).concat('" target="_blank">rejected</a>'));
-                break;
+        case 'code_review_rejected':
+            gs.addErrorMessage('CICD: Code review <a href="'.concat(url).concat('" target="_blank">rejected</a>'));
+            break;
 
-            case 'deployment_in_progress':
-                gs.addInfoMessage('CICD: Deployment in <a href="'.concat(url).concat('" target="_blank">progress</a>'));
-                break;
+        case 'deployment_in_progress':
+            gs.addInfoMessage('CICD: Deployment in <a href="'.concat(url).concat('" target="_blank">progress</a>'));
+            break;
 
-            case 'deployment_manual_interaction':
-                gs.addInfoMessage('CICD: Deployment requires manual <a href="'.concat(url).concat('" target="_blank">interaction</a>'));
-                break;
+        case 'deployment_manual_interaction':
+            gs.addInfoMessage('CICD: Deployment requires manual <a href="'.concat(url).concat('" target="_blank">interaction</a>'));
+            break;
 
-            case 'build_failed':
-                gs.addErrorMessage('CICD: Build <a href="'.concat(url).concat('" target="_blank">failed</a>'));
-                break;
+        case 'build_failed':
+            gs.addErrorMessage('CICD: Build <a href="'.concat(url).concat('" target="_blank">failed</a>'));
+            break;
 
-            case 'complete':
-                gs.addInfoMessage('CICD: Build is <a href="'.concat(url).concat('" target="_blank">complete</a>'));
-                break;
+        case 'complete':
+            gs.addInfoMessage('CICD: Build is <a href="'.concat(url).concat('" target="_blank">complete</a>'));
+            break;
 
-            default:
+        default:
 
         }
     },
@@ -263,7 +263,7 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
                 isInteractive: gs.isInteractive(),
                 remoteUpdateSetID: current.getValue('sys_id'),
                 resolutions: resolutions
-            })
+            });
         }
     },
 
@@ -303,14 +303,14 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
 
         var sanitizeRepo = function (name) {
             return name.toLowerCase().replace(/[^\w]/g, ' ').replace(/\s+/g, '_').replace(/^_+|_+$/g, '');
-        }
+        };
 
         if (current.application.scope.toString().toLowerCase() != 'global') {
             return {
                 repository: sanitizeRepo(current.application.getRefRecord().isValidField('u_repository') ? current.application.u_repository.toString() || current.application.scope.toString() : current.application.scope.toString()),
                 id: current.getValue('application'),
                 name: current.getDisplayValue('application'),
-            }
+            };
         }
 
         /*
@@ -318,7 +318,7 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
             the only way of identifying the scope is checking the customer updates in the update set.
         */
         var agg = new GlideAggregate('sys_update_xml');
-        agg.addQuery('update_set', current.getValue('sys_id'))
+        agg.addQuery('update_set', current.getValue('sys_id'));
         agg.addAggregate('COUNT', 'application');
         agg.orderBy('application');
         agg.query();
@@ -356,15 +356,15 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
 
             var us = new GlideRecord('sys_update_set');
             if (!us.get(updateSetSysId))
-                throw Error("update set not found");
+                throw Error('update set not found');
 
             var sc = new GlideRecord('sys_app');
             if (!sc.get(applicationSysId))
-                throw Error("application not found");
+                throw Error('application not found');
 
             var gr = new GlideRecord('sys_update_xml');
-            gr.addQuery('update_set', updateSetSysId)
-            gr.addQuery('name', 'sys_app_'.concat(applicationSysId))
+            gr.addQuery('update_set', updateSetSysId);
+            gr.addQuery('name', 'sys_app_'.concat(applicationSysId));
             gr.setLimit(1);
             gr.query();
             if (!gr.next()) {
@@ -604,7 +604,7 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
     sys_app_Display: function (currentSysApp) {
         var self = this;
 
-        g_scratchpad.settings = self.settings
+        g_scratchpad.settings = self.settings;
 
         if (!self.settings.cicdEnabled)
             return;
@@ -647,16 +647,16 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
             var cicdApi = new CiCdApi();
             var scopedUpdateSet = cicdApi.publishToUpdateSet(currentSysApp.getValue('sys_id'));
 
-            gs.addInfoMessage('Application exported as <a href="/sys_update_set.do?sys_id=' + scopedUpdateSet.updateSetSysId + '">update set</a>. CICD Process started.')
+            gs.addInfoMessage('Application exported as <a href="/sys_update_set.do?sys_id=' + scopedUpdateSet.updateSetSysId + '">update set</a>. CICD Process started.');
 
             var us = new GlideRecord('sys_update_set');
             if (!us.get(scopedUpdateSet.updateSetSysId))
-                throw Error("update set creation failed");
+                throw Error('update set creation failed');
 
             // extract the application details from the update set 
             var scopes = self.getUpdateSetScopeApplications(us);
             if (scopes.length == 0){
-                throw Error("application details not found");
+                throw Error('application details not found');
             }
 
             var appDetails = scopes[0];
@@ -677,7 +677,7 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
 
         } catch (e) {
 
-            if (e.code == "ALREADY_RUNNING") {
+            if (e.code == 'ALREADY_RUNNING') {
                 return gs.addErrorMessage('There is already a <a href="' + e.link + '">CICD run</a> in progress for this application.');
             }
 
@@ -694,7 +694,7 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
      * @returns {LogicalExpression}
      */
     sys_remote_updateDisplayCancelUiAction: function (current) {
-        return (gs.getProperty('cicd-integration.enabled', 'false') == 'true' && current.state == 'conflict_review' && current.canWrite())
+        return (gs.getProperty('cicd-integration.enabled', 'false') == 'true' && current.state == 'conflict_review' && current.canWrite());
     },
 
     /**
@@ -741,7 +741,7 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
      * @returns {LogicalExpression}
      */
     sys_remote_updateDisplayConfirmUiAction: function (current) {
-        return (gs.getProperty('cicd-integration.enabled', 'false') == 'true' && current.state == 'conflict_review' && !GlidePreviewProblemHandler.hasUnresolvedProblems(current.sys_id) && current.canWrite())
+        return (gs.getProperty('cicd-integration.enabled', 'false') == 'true' && current.state == 'conflict_review' && !GlidePreviewProblemHandler.hasUnresolvedProblems(current.sys_id) && current.canWrite());
     },
 
 
@@ -801,12 +801,12 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
 
             var updateName = prb.remote_update.getRefRecord().getValue('name');
 
-            var file = new GlideRecord("sys_metadata");
+            var file = new GlideRecord('sys_metadata');
             var sysId = null,
                 className = null,
                 updatedOn = 0;
 
-            if (file.get("sys_update_name", updateName)) {
+            if (file.get('sys_update_name', updateName)) {
                 sysId = file.getValue('sys_id');
                 className = file.getValue('sys_class_name');
                 updatedOn = new GlideDateTime(file.getValue('sys_updated_on')).getNumericValue();
@@ -830,7 +830,7 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
                 className: className,
                 updatedOn: updatedOn,
                 host: gs.getProperty('glide.servlet.uri'),
-            }
+            };
         }
         return resolutions;
     },
@@ -870,7 +870,7 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
             throw '[preview] Update set has unresolved problems';
         }
 
-        self.console.log("[preview] sending data to target: {0}", self.settings.cicdServerPreviewCompleteURL);
+        self.console.log('[preview] sending data to target: {0}', self.settings.cicdServerPreviewCompleteURL);
 
         var request = new sn_ws.RESTMessageV2();
         if (self.settings.throughMidServer) {
@@ -883,8 +883,8 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
         self.console.log('[preview] Options {0}', JSON.stringify(options));
 
         request.setEndpoint(self.settings.cicdServerPreviewCompleteURL);
-        request.setRequestHeader("Accept", "application/json");
-        request.setRequestHeader("Content-Type", "application/json");
+        request.setRequestHeader('Accept', 'application/json');
+        request.setRequestHeader('Content-Type', 'application/json');
         request.setHttpMethod('POST');
 
         request.setRequestBody(JSON.stringify(options));
@@ -897,17 +897,17 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
                 if (responseJson) {
                     // TODO
                     // check response body for successful build start
-                    self.console.log("[preview] successful - result is: {0}, text: {1}", responseJson, responseText);
+                    self.console.log('[preview] successful - result is: {0}, text: {1}', responseJson, responseText);
                     return responseJson;
                 }
             } catch (e) {
-                self.console.error("[preview] JSON parsing failed. {0}", e);
+                self.console.error('[preview] JSON parsing failed. {0}', e);
                 throw e;
             }
 
         } else {
             var statusCode = response.getStatusCode();
-            self.console.error("[preview] request ended in error - StatusCode {0}, ResponseMessage: {1}, Endpoint: {2}, RequestBody: {3}", statusCode, response.getErrorMessage(), self.settings.cicdServerPreviewCompleteURL, options);
+            self.console.error('[preview] request ended in error - StatusCode {0}, ResponseMessage: {1}, Endpoint: {2}, RequestBody: {3}', statusCode, response.getErrorMessage(), self.settings.cicdServerPreviewCompleteURL, options);
             throw new Error(response.getErrorMessage());
         }
 
@@ -950,8 +950,8 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
         self.console.log('[deploymentComplete] Options {0}', JSON.stringify(options));
 
         request.setEndpoint(self.settings.cicdServerDeploymentCompleteURL);
-        request.setRequestHeader("Accept", "application/json");
-        request.setRequestHeader("Content-Type", "application/json");
+        request.setRequestHeader('Accept', 'application/json');
+        request.setRequestHeader('Content-Type', 'application/json');
         request.setHttpMethod('POST');
 
         request.setRequestBody(JSON.stringify(options));
@@ -962,17 +962,17 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
                 var responseText = response.getBody(),
                     responseJson = JSON.parse(responseText);
                 if (responseJson) {
-                    self.console.log("[deploymentComplete] successful - result is: {0}, text: {1}", responseJson, responseText);
+                    self.console.log('[deploymentComplete] successful - result is: {0}, text: {1}', responseJson, responseText);
                     return responseJson;
                 }
             } catch (e) {
-                self.console.error("[deploymentComplete] JSON parsing failed. {0}", e);
+                self.console.error('[deploymentComplete] JSON parsing failed. {0}', e);
                 throw e;
             }
 
         } else {
             var statusCode = response.getStatusCode();
-            self.console.error("[deploymentComplete] request ended in error - StatusCode {0}, ResponseMessage: {1}, Endpoint: {2}, RequestBody: {3}", statusCode, response.getErrorMessage(), self.settings.cicdServerDeploymentCompleteURL, options);
+            self.console.error('[deploymentComplete] request ended in error - StatusCode {0}, ResponseMessage: {1}, Endpoint: {2}, RequestBody: {3}', statusCode, response.getErrorMessage(), self.settings.cicdServerDeploymentCompleteURL, options);
             throw new Error(response.getErrorMessage());
         }
 
@@ -1030,7 +1030,7 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
             throw 'Endpoint not defined';
         }
 
-        self.console.log("sending data to target: {0}", self.settings.cicdServerRunURL);
+        self.console.log('sending data to target: {0}', self.settings.cicdServerRunURL);
 
         var request = new sn_ws.RESTMessageV2();
         if (self.settings.throughMidServer) {
@@ -1043,8 +1043,8 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
         self.console.log('Options {0}', JSON.stringify(options));
 
         request.setEndpoint(self.settings.cicdServerRunURL);
-        request.setRequestHeader("Accept", "application/json");
-        request.setRequestHeader("Content-Type", "application/json");
+        request.setRequestHeader('Accept', 'application/json');
+        request.setRequestHeader('Content-Type', 'application/json');
         request.setHttpMethod('POST');
 
         request.setRequestBody(JSON.stringify(options));
@@ -1057,17 +1057,17 @@ CiCdRun.prototype = /** @lends global.module:sys_script_include.CiCdRun.prototyp
                 if (responseJson) {
                     // TODO
                     // check response body for successful build start
-                    self.console.log("successful - result is: {0}, text: {1}", responseJson, responseText);
+                    self.console.log('successful - result is: {0}, text: {1}', responseJson, responseText);
                     return responseJson;
                 }
             } catch (e) {
-                self.console.error("JSON parsing failed. {0}", e);
+                self.console.error('JSON parsing failed. {0}', e);
                 throw e;
             }
 
         } else {
             var statusCode = response.getStatusCode();
-            self.console.error("request ended in error - StatusCode {0}, ResponseMessage: {1}, Endpoint: {2}, RequestBody: {3}", statusCode, response.getErrorMessage(), self.settings.cicdServerRunURL, options);
+            self.console.error('request ended in error - StatusCode {0}, ResponseMessage: {1}, Endpoint: {2}, RequestBody: {3}', statusCode, response.getErrorMessage(), self.settings.cicdServerRunURL, options);
             throw new Error(response.getErrorMessage());
         }
 
