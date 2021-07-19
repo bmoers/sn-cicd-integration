@@ -8,12 +8,12 @@ const filePath = process.env.DEPLOY_FILE;
 
 const f = filePath.split('/');
 
-const filter = encodeURIComponent(process.env.DEPLOY_FILTER)
+const filter = encodeURIComponent(process.env.DEPLOY_FILTER);
 
 const deploy = function (host) {
 
 
-    console.log("Deploying file ", filePath)
+    console.log('Deploying file ', filePath);
 
     var formData = {
         sysparm_ck: '',
@@ -31,7 +31,7 @@ const deploy = function (host) {
     var url = `https://${host}.service-now.com`;//sys_remote_update_set_list.do?sysparm_query=sys_class_name%3Dsys_remote_update_set%5EstateINloaded%2Cpreviewed`;
 
     var request = require('request-promise');
-    var j = request.jar()
+    var j = request.jar();
     request = request.defaults({
         jar: j,
         strictSSL: false,
@@ -59,7 +59,7 @@ const deploy = function (host) {
     }).then(() => {
 
         //console.log(formData);
-        console.log(`deploy to ${host}`)
+        console.log(`deploy to ${host}`);
         //console.log(formData);
 
         //return 'disabled';
@@ -70,7 +70,7 @@ const deploy = function (host) {
             //rawResponse: true,
             //resolveWithFullResponse: true,
             followRedirect: false
-        })
+        });
 
         //
     }).then((r) => {
@@ -81,22 +81,22 @@ const deploy = function (host) {
 
         //console.log(e.response);
         if (e.statusCode == 302) {
-            console.log(`deployment done on ${host}`)
+            console.log(`deployment done on ${host}`);
 
             return { url };
         }
 
-        console.log(`error on ${host}`, e)
-        return `ERROR ON https://${host}.service-now.com/sys_remote_update_set_list.do?sysparm_query=sys_class_name%3Dsys_remote_update_set%5EstateINloaded%2Cpreviewed%5EnameSTARTSWITH${filter}`
+        console.log(`error on ${host}`, e);
+        return `ERROR ON https://${host}.service-now.com/sys_remote_update_set_list.do?sysparm_query=sys_class_name%3Dsys_remote_update_set%5EstateINloaded%2Cpreviewed%5EnameSTARTSWITH${filter}`;
 
     });
 
-}
+};
 
 const commitManually = function (hosts) {
 
-    const username = process.env.DEPLOY_USER_NAME
-    const password = process.env.DEPLOY_USER_PASSWORD
+    const username = process.env.DEPLOY_USER_NAME;
+    const password = process.env.DEPLOY_USER_PASSWORD;
 
     return puppeteer.launch({
         ignoreHTTPSErrors: true,
@@ -135,7 +135,7 @@ const commitManually = function (hosts) {
         }));
 
     });
-}
+};
 
 Promise.mapSeries((process.env.DEPLOY_TO || '').split(','), (host) => {
     return deploy(host.trim());
